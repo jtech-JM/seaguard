@@ -16,6 +16,7 @@ import { Route as AuthenticatedRescueRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedFishermanRouteImport } from './routes/_authenticated/fisherman'
 import { Route as AuthenticatedBmuRouteImport } from './routes/_authenticated/bmu'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as AuthenticatedRescueIncidentsRouteImport } from './routes/_authenticated/rescue.incidents'
 import { Route as ApiPublicIngestSosRouteImport } from './routes/api/public/ingest/sos'
 import { Route as ApiPublicIngestLocationRouteImport } from './routes/api/public/ingest/location'
 import { Route as ApiPublicIngestCancelRouteImport } from './routes/api/public/ingest/cancel'
@@ -54,6 +55,12 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedRescueIncidentsRoute =
+  AuthenticatedRescueIncidentsRouteImport.update({
+    id: '/incidents',
+    path: '/incidents',
+    getParentRoute: () => AuthenticatedRescueRoute,
+  } as any)
 const ApiPublicIngestSosRoute = ApiPublicIngestSosRouteImport.update({
   id: '/api/public/ingest/sos',
   path: '/api/public/ingest/sos',
@@ -76,7 +83,8 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRoute
   '/bmu': typeof AuthenticatedBmuRoute
   '/fisherman': typeof AuthenticatedFishermanRoute
-  '/rescue': typeof AuthenticatedRescueRoute
+  '/rescue': typeof AuthenticatedRescueRouteWithChildren
+  '/rescue/incidents': typeof AuthenticatedRescueIncidentsRoute
   '/api/public/ingest/cancel': typeof ApiPublicIngestCancelRoute
   '/api/public/ingest/location': typeof ApiPublicIngestLocationRoute
   '/api/public/ingest/sos': typeof ApiPublicIngestSosRoute
@@ -87,7 +95,8 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminRoute
   '/bmu': typeof AuthenticatedBmuRoute
   '/fisherman': typeof AuthenticatedFishermanRoute
-  '/rescue': typeof AuthenticatedRescueRoute
+  '/rescue': typeof AuthenticatedRescueRouteWithChildren
+  '/rescue/incidents': typeof AuthenticatedRescueIncidentsRoute
   '/api/public/ingest/cancel': typeof ApiPublicIngestCancelRoute
   '/api/public/ingest/location': typeof ApiPublicIngestLocationRoute
   '/api/public/ingest/sos': typeof ApiPublicIngestSosRoute
@@ -100,7 +109,8 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/bmu': typeof AuthenticatedBmuRoute
   '/_authenticated/fisherman': typeof AuthenticatedFishermanRoute
-  '/_authenticated/rescue': typeof AuthenticatedRescueRoute
+  '/_authenticated/rescue': typeof AuthenticatedRescueRouteWithChildren
+  '/_authenticated/rescue/incidents': typeof AuthenticatedRescueIncidentsRoute
   '/api/public/ingest/cancel': typeof ApiPublicIngestCancelRoute
   '/api/public/ingest/location': typeof ApiPublicIngestLocationRoute
   '/api/public/ingest/sos': typeof ApiPublicIngestSosRoute
@@ -114,6 +124,7 @@ export interface FileRouteTypes {
     | '/bmu'
     | '/fisherman'
     | '/rescue'
+    | '/rescue/incidents'
     | '/api/public/ingest/cancel'
     | '/api/public/ingest/location'
     | '/api/public/ingest/sos'
@@ -125,6 +136,7 @@ export interface FileRouteTypes {
     | '/bmu'
     | '/fisherman'
     | '/rescue'
+    | '/rescue/incidents'
     | '/api/public/ingest/cancel'
     | '/api/public/ingest/location'
     | '/api/public/ingest/sos'
@@ -137,6 +149,7 @@ export interface FileRouteTypes {
     | '/_authenticated/bmu'
     | '/_authenticated/fisherman'
     | '/_authenticated/rescue'
+    | '/_authenticated/rescue/incidents'
     | '/api/public/ingest/cancel'
     | '/api/public/ingest/location'
     | '/api/public/ingest/sos'
@@ -202,6 +215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/rescue/incidents': {
+      id: '/_authenticated/rescue/incidents'
+      path: '/incidents'
+      fullPath: '/rescue/incidents'
+      preLoaderRoute: typeof AuthenticatedRescueIncidentsRouteImport
+      parentRoute: typeof AuthenticatedRescueRoute
+    }
     '/api/public/ingest/sos': {
       id: '/api/public/ingest/sos'
       path: '/api/public/ingest/sos'
@@ -226,18 +246,29 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AuthenticatedRescueRouteChildren {
+  AuthenticatedRescueIncidentsRoute: typeof AuthenticatedRescueIncidentsRoute
+}
+
+const AuthenticatedRescueRouteChildren: AuthenticatedRescueRouteChildren = {
+  AuthenticatedRescueIncidentsRoute: AuthenticatedRescueIncidentsRoute,
+}
+
+const AuthenticatedRescueRouteWithChildren =
+  AuthenticatedRescueRoute._addFileChildren(AuthenticatedRescueRouteChildren)
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedBmuRoute: typeof AuthenticatedBmuRoute
   AuthenticatedFishermanRoute: typeof AuthenticatedFishermanRoute
-  AuthenticatedRescueRoute: typeof AuthenticatedRescueRoute
+  AuthenticatedRescueRoute: typeof AuthenticatedRescueRouteWithChildren
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedBmuRoute: AuthenticatedBmuRoute,
   AuthenticatedFishermanRoute: AuthenticatedFishermanRoute,
-  AuthenticatedRescueRoute: AuthenticatedRescueRoute,
+  AuthenticatedRescueRoute: AuthenticatedRescueRouteWithChildren,
 }
 
 const AuthenticatedRouteRouteWithChildren =

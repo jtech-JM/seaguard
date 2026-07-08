@@ -8,14 +8,11 @@ import { redirect } from "@tanstack/react-router";
 import type { AppRole } from "@/lib/use-role";
 import { ROLE_HOME } from "@/lib/use-role";
 
-interface RouteContext {
+export interface RouteContext {
   role: AppRole | null;
 }
 
-export function requireRole(
-  context: RouteContext,
-  allowed: AppRole[],
-) {
+export function requireRole(context: RouteContext, allowed: AppRole[]) {
   const { role } = context;
 
   // Not logged in — should not happen (parent already checked), but guard anyway

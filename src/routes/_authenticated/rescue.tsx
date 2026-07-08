@@ -16,7 +16,7 @@ import {
   EMERGENCY_LEVEL_COLOR,
 } from "@/lib/marine-types";
 import { supabase } from "@/integrations/supabase/client";
-import { requireRole } from "@/lib/route-guard";
+import { requireRole, type RouteContext } from "@/lib/route-guard";
 // Asset loaded at runtime to avoid build errors if the file is missing
 const ALARM_URL = (() => {
   try {
@@ -31,23 +31,28 @@ import {
   BellOff,
   BellRing,
   CheckCircle2,
+  ClipboardList,
   LogOut,
   Navigation,
   Radio,
-  Search,
   Ship,
   Siren,
   Volume2,
   Waves,
+  X,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/rescue")({
   ssr: false,
-  beforeLoad: ({ context }) => requireRole(context as any, ["rescue_officer"]),
+  beforeLoad: ({ context }) => requireRole(context as RouteContext, ["rescue_officer"]),
+  validateSearch: (s: Record<string, unknown>) => ({ selected: s.selected as string | undefined }),
   head: () => ({
     meta: [
       { title: "Rescue Operations Center — MarineRescue" },
-      { name: "description", content: "Live SOS incidents, real-time vessel tracking, rescue coordination." },
+      {
+        name: "description",
+        content: "Live SOS incidents, real-time vessel tracking, rescue coordination.",
+      },
     ],
   }),
   component: RescueDashboard,
@@ -71,17 +76,45 @@ function fmtDuration(ms: number) {
 
 function RescueDashboard() {
   const navigate = useNavigate();
+  const search = Route.useSearch() as { selected?: string };
   const [alerts, setAlerts] = useState<AlertJoined[]>([]);
+  const [bmus, setBMUs] = useState<BMU[]>([]);
+  const [selectedBmuId, setSelectedBmuId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
-  const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"active" | "all" | "resolved">("active");
   const [muted, setMuted] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
   const [dismissedBannerFor, setDismissedBannerFor] = useState<Set<string>>(new Set());
-  const [stats, setStats] = useState({ boatsAtSea: 0, overdue: 0, devicesOnline: 0, activeRescues: 0 });
+  const [stats, setStats] = useState({
+    boatsAtSea: 0,
+    overdue: 0,
+    devicesOnline: 0,
+    activeRescues: 0,
+  });
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
+
+  // Map refs — single instance at root level
+  const mapElRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<LMap | null>(null);
+  const LRef = useRef<typeof import("leaflet") | null>(null);
+  const markersRef = useRef<Map<string, LMarker>>(new Map());
+  const trailsRef = useRef<Map<string, import("leaflet").Polyline>>(new Map());
+
+  // Per-alert GPS data for the detail panel
+  const [detailLatest, setDetailLatest] = useState<GpsLog | null>(null);
+  const [detailTrail, setDetailTrail] = useState<GpsLog[]>([]);
+  const [detailFollowLive, setDetailFollowLive] = useState(true);
+  const [detailShowTrail, setDetailShowTrail] = useState(true);
+  const [detailRescueOp, setDetailRescueOp] = useState<RescueOperation | null>(null);
+  const [detailOpBusy, setDetailOpBusy] = useState(false);
+  const [detailOpNotes, setDetailOpNotes] = useState("");
+  const [detailOpTeam, setDetailOpTeam] = useState("");
+
+  const filteredAlerts = useMemo(() => {
+    if (!selectedBmuId) return alerts;
+    return alerts.filter((a) => a.bmu_id === selectedBmuId);
+  }, [alerts, selectedBmuId]);
 
   async function refresh() {
     const { data } = await supabase
@@ -92,15 +125,47 @@ function RescueDashboard() {
     setAlerts((data as unknown as AlertJoined[]) ?? []);
   }
 
-  async function refreshStats() {
+  async function loadBMUs() {
+    const { data } = await supabase.from("bmus").select("*").order("name");
+    setBMUs((data as BMU[]) ?? []);
+  }
+
+  async function refreshStats(bmuId?: string) {
     const nowIso = new Date().toISOString();
     const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+    let tripsQ = supabase
+      .from("sea_trips")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "at_sea");
+    let overdueQ = supabase
+      .from("sea_trips")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "at_sea")
+      .lt("expected_return", nowIso);
+    let onlineQ = supabase
+      .from("devices")
+      .select("id, boats!inner(bmu_id)", { count: "exact", head: true })
+      .gte("last_seen_at", cutoff);
+    let rescuesQ = supabase
+      .from("rescue_operations")
+      .select("id, alert:alert_id!inner(bmu_id)", { count: "exact", head: true })
+      .is("ended_at", null);
+
+    if (bmuId) {
+      tripsQ = tripsQ.eq("bmu_id", bmuId);
+      overdueQ = overdueQ.eq("bmu_id", bmuId);
+      onlineQ = onlineQ.eq("boats.bmu_id", bmuId);
+      rescuesQ = rescuesQ.eq("alert.bmu_id", bmuId);
+    }
+
     const [atSea, overdue, online, rescues] = await Promise.all([
-      supabase.from("sea_trips").select("id", { count: "exact", head: true }).eq("status", "at_sea"),
-      supabase.from("sea_trips").select("id", { count: "exact", head: true }).eq("status", "at_sea").lt("expected_return", nowIso),
-      supabase.from("devices").select("id", { count: "exact", head: true }).gte("last_seen_at", cutoff),
-      supabase.from("rescue_operations").select("id", { count: "exact", head: true }).is("ended_at", null),
+      tripsQ,
+      overdueQ,
+      onlineQ,
+      rescuesQ,
     ]);
+
     setStats({
       boatsAtSea: atSea.count ?? 0,
       overdue: overdue.count ?? 0,
@@ -111,20 +176,39 @@ function RescueDashboard() {
 
   useEffect(() => {
     refresh();
-    refreshStats();
+    loadBMUs();
     const tick = window.setInterval(() => setNow(Date.now()), 1000);
-    const statsTick = window.setInterval(refreshStats, 30_000);
     const ch = supabase
       .channel("sos-stream")
-      .on("postgres_changes", { event: "*", schema: "public", table: "sos_alerts" }, () => refresh())
-      .on("postgres_changes", { event: "*", schema: "public", table: "sea_trips" }, refreshStats)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sos_alerts" }, () =>
+        refresh(),
+      )
       .subscribe();
     return () => {
       window.clearInterval(tick);
-      window.clearInterval(statsTick);
       supabase.removeChannel(ch);
     };
   }, []);
+
+  useEffect(() => {
+    refreshStats(selectedBmuId);
+    const statsTick = window.setInterval(() => refreshStats(selectedBmuId), 30_000);
+    const ch = supabase
+      .channel("trips-stream")
+      .on("postgres_changes", { event: "*", schema: "public", table: "sea_trips" }, () =>
+        refreshStats(selectedBmuId),
+      )
+      .subscribe();
+    return () => {
+      window.clearInterval(statsTick);
+      supabase.removeChannel(ch);
+    };
+  }, [selectedBmuId]);
+
+  // Handle ?selected= URL param on mount
+  useEffect(() => {
+    if (search.selected) setSelectedId(search.selected);
+  }, [search.selected]);
 
   // Track newly arrived NEW alerts to trigger alarm state
   useEffect(() => {
@@ -132,7 +216,10 @@ function RescueDashboard() {
   }, [alerts]);
 
   const unacknowledgedNew = useMemo(
-    () => alerts.filter((a) => a.status === "new" && !a.acknowledged_at && !dismissedBannerFor.has(a.id)),
+    () =>
+      alerts.filter(
+        (a) => a.status === "new" && !a.acknowledged_at && !dismissedBannerFor.has(a.id),
+      ),
     [alerts, dismissedBannerFor],
   );
   const alarmActive = unacknowledgedNew.length > 0 && !muted;
@@ -165,33 +252,11 @@ function RescueDashboard() {
     }
   }
 
-  const visible = useMemo(() => {
-    const list = alerts.filter((a) => {
-      if (filter === "active" && !ACTIVE_STATUSES.includes(a.status)) return false;
-      if (filter === "resolved" && ACTIVE_STATUSES.includes(a.status)) return false;
-      if (q) {
-        const hay = [a.fisherman?.full_name, a.boat?.name, a.boat?.registration_number, a.device?.device_id, a.bmu?.name]
-          .filter(Boolean).join(" ").toLowerCase();
-        if (!hay.includes(q.toLowerCase())) return false;
-      }
-      return true;
-    });
-    // New/unacknowledged first
-    return list.sort((a, b) => {
-      const aNew = a.status === "new" && !a.acknowledged_at ? 0 : 1;
-      const bNew = b.status === "new" && !b.acknowledged_at ? 0 : 1;
-      if (aNew !== bNew) return aNew - bNew;
-      return new Date(b.started_at).getTime() - new Date(a.started_at).getTime();
-    });
-  }, [alerts, filter, q]);
-
-  useEffect(() => {
-    if (!selectedId && visible.length > 0) setSelectedId(visible[0].id);
-    if (selectedId && !alerts.find((a) => a.id === selectedId)) setSelectedId(visible[0]?.id ?? null);
-  }, [visible, alerts, selectedId]);
-
-  const selected = useMemo(() => alerts.find((a) => a.id === selectedId) ?? null, [alerts, selectedId]);
   const activeCount = alerts.filter((a) => ACTIVE_STATUSES.includes(a.status)).length;
+  const selected = useMemo(
+    () => alerts.find((a) => a.id === selectedId) ?? null,
+    [alerts, selectedId],
+  );
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -201,13 +266,290 @@ function RescueDashboard() {
   async function acknowledgeAll() {
     const ids = unacknowledgedNew.map((a) => a.id);
     if (ids.length === 0) return;
-    await supabase.from("sos_alerts").update({ status: "acknowledged", acknowledged_at: new Date().toISOString() }).in("id", ids);
+    await supabase
+      .from("sos_alerts")
+      .update({ status: "acknowledged", acknowledged_at: new Date().toISOString() })
+      .in("id", ids);
     refresh();
   }
+
+  // ── Leaflet: load library once ───────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    import("leaflet").then((mod) => {
+      if (!cancelled) LRef.current = (mod.default ?? mod) as typeof import("leaflet");
+      initMap();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function initMap() {
+    const L = LRef.current;
+    if (!L || !mapElRef.current || mapRef.current) return;
+    const map = L.map(mapElRef.current, { zoomControl: true, attributionControl: false }).setView(
+      [-4.0435, 39.6682],
+      7,
+    );
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+      maxZoom: 19,
+    }).addTo(map);
+    mapRef.current = map;
+  }
+
+  // ── Rebuild all markers when alerts change ───────────────────────────────
+  useEffect(() => {
+    const L = LRef.current;
+    const map = mapRef.current;
+    if (!L || !map) return;
+
+    const currentIds = new Set(filteredAlerts.map((a) => a.id));
+
+    // Remove stale markers
+    markersRef.current.forEach((marker, id) => {
+      if (!currentIds.has(id)) {
+        marker.remove();
+        markersRef.current.delete(id);
+      }
+    });
+
+    // Upsert markers for all alerts with GPS coords
+    for (const a of filteredAlerts) {
+      if (a.last_lat == null || a.last_lng == null) continue;
+      const pos: [number, number] = [a.last_lat, a.last_lng];
+      const isActive = ACTIVE_STATUSES.includes(a.status);
+      const isSelected = a.id === selectedId;
+
+      const icon = buildMarkerIcon(L, a, isActive, isSelected);
+
+      const existing = markersRef.current.get(a.id);
+      if (existing) {
+        existing.setLatLng(pos);
+        existing.setIcon(icon);
+      } else {
+        const marker = L.marker(pos, { icon }).addTo(map);
+        marker.on("click", () => setSelectedId(a.id));
+        markersRef.current.set(a.id, marker);
+      }
+    }
+  }, [filteredAlerts, selectedId]);
+
+  // ── Pan to selected alert ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!selectedId || !mapRef.current) return;
+    const a = filteredAlerts.find((al) => al.id === selectedId);
+    if (a?.last_lat != null && a?.last_lng != null) {
+      mapRef.current.panTo([a.last_lat, a.last_lng], { animate: true, duration: 0.6 });
+    }
+  }, [selectedId, filteredAlerts]);
+
+  // ── Load detail panel data when selectedId changes ───────────────────────
+  useEffect(() => {
+    if (!selectedId) {
+      setDetailLatest(null);
+      setDetailTrail([]);
+      setDetailRescueOp(null);
+      return;
+    }
+    let cancelled = false;
+    let ch: ReturnType<typeof supabase.channel> | null = null;
+
+    async function loadDetail() {
+      const [{ data: logs }, { data: op }] = await Promise.all([
+        supabase
+          .from("gps_logs")
+          .select("*")
+          .eq("alert_id", selectedId!)
+          .order("recorded_at", { ascending: false })
+          .limit(200),
+        supabase
+          .from("rescue_operations")
+          .select("*")
+          .eq("alert_id", selectedId!)
+          .order("started_at", { ascending: false })
+          .limit(1),
+      ]);
+      if (!cancelled) {
+        const allLogs = (logs ?? []) as GpsLog[];
+        setDetailLatest(allLogs[0] ?? null);
+        setDetailTrail([...allLogs].reverse());
+        const opRow = (op?.[0] as RescueOperation) ?? null;
+        setDetailRescueOp(opRow);
+        if (opRow) {
+          setDetailOpNotes(opRow.notes ?? "");
+          setDetailOpTeam(opRow.team_name ?? "");
+        } else {
+          setDetailOpNotes("");
+          setDetailOpTeam("");
+        }
+      }
+    }
+    loadDetail();
+
+    ch = supabase
+      .channel(`gps-detail-${selectedId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "gps_logs",
+          filter: `alert_id=eq.${selectedId}`,
+        },
+        (payload) => {
+          const log = payload.new as GpsLog;
+          setDetailLatest(log);
+          setDetailTrail((prev) => [...prev, log]);
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "rescue_operations",
+          filter: `alert_id=eq.${selectedId}`,
+        },
+        () => loadDetail(),
+      )
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      if (ch) supabase.removeChannel(ch);
+    };
+  }, [selectedId]);
+
+  // ── GPS trail polyline for selected alert ────────────────────────────────
+  useEffect(() => {
+    const L = LRef.current;
+    const map = mapRef.current;
+    if (!L || !map || !selectedId) return;
+
+    // Remove trails for non-selected alerts
+    trailsRef.current.forEach((line, id) => {
+      if (id !== selectedId) {
+        line.remove();
+        trailsRef.current.delete(id);
+      }
+    });
+
+    const pts: [number, number][] = detailTrail.map((g) => [g.lat, g.lng]);
+    const existing = trailsRef.current.get(selectedId);
+    if (existing) {
+      existing.setLatLngs(pts);
+      existing.setStyle({ opacity: detailShowTrail ? 0.7 : 0 });
+    } else if (pts.length > 1) {
+      const line = L.polyline(pts, {
+        color: "#4dd9c0",
+        weight: 2,
+        opacity: detailShowTrail ? 0.7 : 0,
+        dashArray: "4 4",
+      }).addTo(map);
+      trailsRef.current.set(selectedId, line);
+    }
+  }, [selectedId, detailTrail, detailShowTrail]);
+
+  // ── Follow live GPS for selected alert ──────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !detailLatest || !detailFollowLive || !selectedId) return;
+    const a = filteredAlerts.find((al) => al.id === selectedId);
+    if (!a || !ACTIVE_STATUSES.includes(a.status)) return;
+    map.panTo([detailLatest.lat, detailLatest.lng], { animate: true, duration: 0.6 });
+  }, [detailLatest, detailFollowLive, selectedId, filteredAlerts]);
+
+  // ── Cleanup map on unmount ───────────────────────────────────────────────
+  useEffect(
+    () => () => {
+      mapRef.current?.remove();
+      mapRef.current = null;
+      markersRef.current.clear();
+      trailsRef.current.clear();
+    },
+    [],
+  );
+
+  // ── Rescue operation helpers ─────────────────────────────────────────────
+  async function createRescueOp() {
+    if (!selectedId) return;
+    setDetailOpBusy(true);
+    try {
+      await supabase.from("rescue_operations").insert({
+        alert_id: selectedId,
+        team_name: detailOpTeam || null,
+        notes: detailOpNotes || null,
+        status: "assigned",
+      });
+      await supabase.from("sos_alerts").update({ status: "assigned" }).eq("id", selectedId);
+      refresh();
+    } finally {
+      setDetailOpBusy(false);
+    }
+  }
+
+  async function closeRescueOp(opId: string) {
+    if (!selectedId) return;
+    setDetailOpBusy(true);
+    try {
+      await supabase
+        .from("rescue_operations")
+        .update({
+          ended_at: new Date().toISOString(),
+          status: "resolved",
+          notes: detailOpNotes || null,
+        })
+        .eq("id", opId);
+      await supabase
+        .from("sos_alerts")
+        .update({ status: "resolved", resolved_at: new Date().toISOString() })
+        .eq("id", selectedId);
+      refresh();
+    } finally {
+      setDetailOpBusy(false);
+    }
+  }
+
+  async function setStatus(next: AlertStatus) {
+    if (!selectedId) return;
+    const a = filteredAlerts.find((al) => al.id === selectedId);
+    if (!a) return;
+    const patch: Partial<SOSAlertRow> = { status: next };
+    if (next === "acknowledged" && !a.acknowledged_at)
+      patch.acknowledged_at = new Date().toISOString();
+    if ((next === "resolved" || next === "closed") && !a.resolved_at)
+      patch.resolved_at = new Date().toISOString();
+    await supabase.from("sos_alerts").update(patch).eq("id", selectedId);
+    refresh();
+  }
+
+  const live: { lat: number; lng: number; accuracy: number | null } | null = selected
+    ? detailLatest
+      ? { lat: detailLatest.lat, lng: detailLatest.lng, accuracy: detailLatest.accuracy }
+      : selected.last_lat != null && selected.last_lng != null
+        ? {
+            lat: selected.last_lat,
+            lng: selected.last_lng,
+            accuracy: selected.last_accuracy ?? null,
+          }
+        : null
+    : null;
+  const gpsAgeS = detailLatest
+    ? Math.floor((now - new Date(detailLatest.recorded_at).getTime()) / 1000)
+    : null;
+  const panelOpen = selectedId !== null && selected !== null;
+  const selectedIsActive = selected ? ACTIVE_STATUSES.includes(selected.status) : false;
 
   return (
     <div className="flex min-h-screen flex-col bg-ocean text-foam">
       <audio ref={audioRef} src={ALARM_URL} preload="auto" />
+      <style>{`
+        @keyframes sos-pulse {0%{transform:scale(0.6);opacity:1}100%{transform:scale(2.2);opacity:0}}
+        @keyframes flash {0%,100%{opacity:1}50%{opacity:.55}}
+        .leaflet-container{background:#0a1929;font-family:inherit}
+        .leaflet-control-zoom a{background:rgba(15,40,60,0.9)!important;color:#eaf4f4!important;border-color:rgba(255,255,255,0.08)!important}
+      `}</style>
 
       {/* Full-screen emergency banner */}
       {unacknowledgedNew.length > 0 && (
@@ -226,24 +568,50 @@ function RescueDashboard() {
         />
       )}
 
+      {/* Header */}
       <header className="flex items-center justify-between border-b border-foam/10 px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="grid h-9 w-9 place-items-center rounded-lg bg-tide/20 ring-1 ring-tide/30">
             <Anchor className="h-4 w-4 text-tide" />
           </div>
           <div>
-            <div className="text-[11px] uppercase tracking-[0.2em] text-foam/50">Coastal Command</div>
+            <div className="text-[11px] uppercase tracking-[0.2em] text-foam/50">
+              Coastal Command
+            </div>
             <div className="text-sm font-semibold">Rescue Operations Center</div>
           </div>
         </div>
         <div className="flex items-center gap-3 text-xs text-foam/60">
-          <div className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 ${activeCount ? "bg-distress/15 text-distress" : "text-foam/60"}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${activeCount ? "animate-pulse bg-distress" : "bg-tide"}`} />
+          {bmus.length > 0 && (
+            <select
+              value={selectedBmuId}
+              onChange={(e) => setSelectedBmuId(e.target.value)}
+              className="rounded-lg border border-foam/15 bg-ocean/90 px-3 py-1.5 text-xs text-foam outline-none focus:border-tide/60"
+            >
+              <option value="" className="bg-ocean">
+                All Beach Units (BMUs)
+              </option>
+              {bmus.map((b) => (
+                <option key={b.id} value={b.id} className="bg-ocean">
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <div
+            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 ${activeCount ? "bg-distress/15 text-distress" : "text-foam/60"}`}
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${activeCount ? "animate-pulse bg-distress" : "bg-tide"}`}
+            />
             {activeCount} active
           </div>
           {!audioReady && (
-            <button onClick={enableAudio} className="inline-flex items-center gap-1.5 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-1.5 text-yellow-300 hover:bg-yellow-500/20">
-              <Volume2 className="h-3.5 w-3.5" /> Enable alerts
+            <button
+              onClick={enableAudio}
+              className="inline-flex animate-pulse items-center gap-1.5 rounded-lg border border-yellow-500/60 bg-yellow-500/20 px-4 py-2 text-sm font-semibold text-yellow-300 hover:bg-yellow-500/30"
+            >
+              <Volume2 className="h-4 w-4" /> Click to enable alarm sound
             </button>
           )}
           <button
@@ -253,121 +621,474 @@ function RescueDashboard() {
             {muted ? <BellOff className="h-3.5 w-3.5" /> : <BellRing className="h-3.5 w-3.5" />}
             {muted ? "Muted" : "Alarm on"}
           </button>
-          <button onClick={signOut} className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 hover:bg-foam/10">
+          <button
+            onClick={signOut}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 hover:bg-foam/10"
+          >
             <LogOut className="h-3.5 w-3.5" /> Sign out
           </button>
         </div>
       </header>
 
-      {/* Overview stats bar */}
+      {/* Stats bar */}
       <div className="grid grid-cols-2 gap-px border-b border-foam/10 bg-foam/[0.02] sm:grid-cols-4 lg:grid-cols-6">
-        <StatCell label="Active SOS" value={activeCount} tone={activeCount ? "distress" : "muted"} icon={<Siren className="h-3.5 w-3.5" />} />
-        <StatCell label="Active Rescues" value={stats.activeRescues} tone="tide" icon={<Radio className="h-3.5 w-3.5" />} />
-        <StatCell label="Boats at Sea" value={stats.boatsAtSea} tone="foam" icon={<Ship className="h-3.5 w-3.5" />} />
-        <StatCell label="Overdue" value={stats.overdue} tone={stats.overdue ? "distress" : "muted"} icon={<Waves className="h-3.5 w-3.5" />} />
-        <StatCell label="Devices Online" value={stats.devicesOnline} tone="tide" icon={<Radio className="h-3.5 w-3.5" />} />
-        <StatCell label="Resolved (24h)" value={alerts.filter((a) => (a.status === "resolved" || a.status === "closed") && Date.now() - new Date(a.started_at).getTime() < 86_400_000).length} tone="muted" icon={<CheckCircle2 className="h-3.5 w-3.5" />} />
+        <StatCell
+          label="Active SOS"
+          value={activeCount}
+          tone={activeCount ? "distress" : "muted"}
+          icon={<Siren className="h-3.5 w-3.5" />}
+        />
+        <StatCell
+          label="Active Rescues"
+          value={stats.activeRescues}
+          tone="tide"
+          icon={<Radio className="h-3.5 w-3.5" />}
+        />
+        <StatCell
+          label="Boats at Sea"
+          value={stats.boatsAtSea}
+          tone="foam"
+          icon={<Ship className="h-3.5 w-3.5" />}
+        />
+        <StatCell
+          label="Overdue"
+          value={stats.overdue}
+          tone={stats.overdue ? "distress" : "muted"}
+          icon={<Waves className="h-3.5 w-3.5" />}
+        />
+        <StatCell
+          label="Devices Online"
+          value={stats.devicesOnline}
+          tone="tide"
+          icon={<Radio className="h-3.5 w-3.5" />}
+        />
+        <StatCell
+          label="Resolved (24h)"
+          value={
+            filteredAlerts.filter(
+              (a) =>
+                (a.status === "resolved" || a.status === "closed") &&
+                Date.now() - new Date(a.started_at).getTime() < 86_400_000,
+            ).length
+          }
+          tone="muted"
+          icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+        />
       </div>
 
-      <div className="grid flex-1 grid-cols-1 lg:grid-cols-[400px_1fr]">
-        <aside className="border-r border-foam/10 bg-foam/[0.02]">
-          <div className="border-b border-foam/10 p-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foam/40" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search boat, captain, device..."
-                className="w-full rounded-lg border border-foam/10 bg-foam/[0.04] py-2 pl-9 pr-3 text-sm outline-none focus:border-tide/60"
-              />
-            </div>
-            <div className="mt-3 inline-flex rounded-lg bg-foam/[0.04] p-0.5 text-[11px]">
-              {(["active", "resolved", "all"] as const).map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`px-3 py-1.5 rounded-md uppercase tracking-wider transition ${
-                    filter === f ? "bg-tide text-ocean" : "text-foam/60 hover:text-foam"
-                  }`}
-                >
-                  {f}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Body: full-screen map */}
+      <div className="relative flex-1">
+        {/* Map fills 100% */}
+        <div ref={mapElRef} className="absolute inset-0 bg-[#0a1929]" />
 
-          <div className="divide-y divide-foam/5 max-h-[calc(100vh-260px)] overflow-y-auto">
-            {visible.length === 0 && (
-              <div className="px-5 py-10 text-center text-sm text-foam/50">
-                <Waves className="mx-auto mb-3 h-6 w-6 text-tide/60" />
-                No incidents match.
-              </div>
+        {/* Bottom-left pill: Incidents button */}
+        <div className="absolute bottom-6 left-6 z-[500]">
+          <button
+            onClick={() => navigate({ to: "/rescue/incidents" })}
+            className="inline-flex items-center gap-2 rounded-full border border-foam/20 bg-ocean/90 px-4 py-2.5 text-sm font-semibold text-foam shadow-lg backdrop-blur-md hover:bg-foam/10 transition"
+          >
+            <ClipboardList className="h-4 w-4 text-tide" />
+            Incidents
+            {activeCount > 0 && (
+              <span className="ml-0.5 rounded-full bg-distress px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {activeCount}
+              </span>
             )}
-            {visible.map((a) => <IncidentCard key={a.id} a={a} now={now} selected={selectedId === a.id} onClick={() => setSelectedId(a.id)} />)}
-          </div>
-        </aside>
+          </button>
+        </div>
 
-        <main className="relative">
-          {selected ? <AlertDetail alert={selected} now={now} onUpdated={refresh} /> : <EmptyMap />}
-        </main>
+        {/* Right-side detail panel */}
+        <div
+          className={`fixed right-0 z-[400] flex flex-col border-l border-foam/10 bg-ocean/95 backdrop-blur-md transition-transform duration-300 ease-in-out
+            ${panelOpen ? "translate-x-0" : "translate-x-full"}
+          `}
+          style={{
+            top: "var(--rescue-panel-top, 0px)",
+            bottom: 0,
+            width: "clamp(320px, 380px, 100vw)",
+          }}
+        >
+          {panelOpen && selected && (
+            <DetailPanel
+              alert={selected}
+              now={now}
+              live={live}
+              gpsAgeS={gpsAgeS}
+              detailTrail={detailTrail}
+              detailFollowLive={detailFollowLive}
+              detailShowTrail={detailShowTrail}
+              detailRescueOp={detailRescueOp}
+              detailOpBusy={detailOpBusy}
+              detailOpNotes={detailOpNotes}
+              detailOpTeam={detailOpTeam}
+              selectedIsActive={selectedIsActive}
+              onClose={() => setSelectedId(null)}
+              onSetFollowLive={setDetailFollowLive}
+              onSetShowTrail={setDetailShowTrail}
+              onSetOpNotes={setDetailOpNotes}
+              onSetOpTeam={setDetailOpTeam}
+              onCreateRescueOp={createRescueOp}
+              onCloseRescueOp={closeRescueOp}
+              onSetStatus={setStatus}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function StatCell({ label, value, tone, icon }: { label: string; value: number; tone: "distress" | "tide" | "foam" | "muted"; icon: React.ReactNode }) {
-  const color = tone === "distress" ? "text-distress" : tone === "tide" ? "text-tide" : tone === "foam" ? "text-foam" : "text-foam/50";
+// ── Build divIcon for a marker ─────────────────────────────────────────────
+function buildMarkerIcon(
+  L: typeof import("leaflet"),
+  _a: AlertJoined,
+  isActive: boolean,
+  isSelected: boolean,
+) {
+  if (!isActive) {
+    // Small grey resolved dot
+    const size = isSelected ? 10 : 8;
+    return L.divIcon({
+      className: "",
+      html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:#6b8ca0;border:1px solid rgba(255,255,255,0.2);box-shadow:0 0 4px rgba(0,0,0,0.4)"></div>`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+    });
+  }
+
+  // Determine pulsing colors based on alert status
+  let pulseColor = "rgba(225,53,69,0.4)"; // default red
+  let dotColor = "#e13545"; // default red
+
+  if (_a.status === "acknowledged" || _a.status === "assigned") {
+    pulseColor = "rgba(245,158,11,0.4)"; // orange/amber
+    dotColor = "#f59e0b"; // orange/amber
+  } else if (_a.status === "in_progress") {
+    pulseColor = "rgba(20,184,166,0.4)"; // cyan/teal
+    dotColor = "#14b8a6"; // cyan/teal
+  }
+
+  const dotSize = isSelected ? 28 : 20;
+  const html = `<div style="position:relative;cursor:pointer;width:${dotSize}px;height:${dotSize}px">
+    <div style="position:absolute;inset:0;border-radius:9999px;background:${pulseColor};animation:sos-pulse 1.2s ease-out infinite"></div>
+    <div style="position:absolute;inset:0;border-radius:9999px;background:${pulseColor};animation:sos-pulse 1.2s ease-out infinite;animation-delay:.6s"></div>
+    <div style="position:absolute;inset:${Math.round(dotSize * 0.28)}px;border-radius:9999px;background:${dotColor}${isSelected ? ";box-shadow:0 0 0 3px rgba(255,255,255,0.95)" : ""}"></div>
+  </div>`;
+
+  return L.divIcon({
+    className: "",
+    html,
+    iconSize: [dotSize, dotSize],
+    iconAnchor: [dotSize / 2, dotSize / 2],
+  });
+}
+
+// ── Detail panel (right-side slide-in) ────────────────────────────────────
+interface DetailPanelProps {
+  alert: AlertJoined;
+  now: number;
+  live: { lat: number; lng: number; accuracy: number | null } | null;
+  gpsAgeS: number | null;
+  detailTrail: GpsLog[];
+  detailFollowLive: boolean;
+  detailShowTrail: boolean;
+  detailRescueOp: RescueOperation | null;
+  detailOpBusy: boolean;
+  detailOpNotes: string;
+  detailOpTeam: string;
+  selectedIsActive: boolean;
+  onClose: () => void;
+  onSetFollowLive: (v: boolean) => void;
+  onSetShowTrail: (v: boolean) => void;
+  onSetOpNotes: (v: string) => void;
+  onSetOpTeam: (v: string) => void;
+  onCreateRescueOp: () => void;
+  onCloseRescueOp: (id: string) => void;
+  onSetStatus: (s: AlertStatus) => void;
+}
+
+function DetailPanel({
+  alert,
+  now,
+  live,
+  gpsAgeS,
+  detailTrail,
+  detailFollowLive,
+  detailShowTrail,
+  detailRescueOp,
+  detailOpBusy,
+  detailOpNotes,
+  detailOpTeam,
+  selectedIsActive,
+  onClose,
+  onSetFollowLive,
+  onSetShowTrail,
+  onSetOpNotes,
+  onSetOpTeam,
+  onCreateRescueOp,
+  onCloseRescueOp,
+  onSetStatus,
+}: DetailPanelProps) {
+  const isActive = selectedIsActive;
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Panel header */}
+      <div className="flex items-center justify-between border-b border-foam/10 px-4 py-3">
+        <div
+          className={`inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider ${isActive ? "text-distress" : "text-tide"}`}
+        >
+          {isActive ? (
+            <>
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-distress" />{" "}
+              {ALERT_STATUS_LABEL[alert.status]}
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="h-3.5 w-3.5" /> {ALERT_STATUS_LABEL[alert.status]}
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-[11px] text-foam/50">
+            {fmtDuration(now - new Date(alert.started_at).getTime())}
+          </div>
+          <button onClick={onClose} className="rounded-md p-1 hover:bg-foam/10" aria-label="Close">
+            <X className="h-4 w-4 text-foam/60" />
+          </button>
+        </div>
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {(alert.emergency_level || alert.battery != null) && (
+          <div className="flex items-center gap-2 text-[11px]">
+            {alert.emergency_level && (
+              <span
+                className={`rounded-md border border-foam/15 px-2 py-0.5 font-semibold uppercase tracking-wider ${EMERGENCY_LEVEL_COLOR[alert.emergency_level] ?? "text-foam"}`}
+              >
+                {alert.emergency_level}
+              </span>
+            )}
+            {alert.battery != null && (
+              <span
+                className={`rounded-md border border-foam/15 px-2 py-0.5 tabular-nums ${alert.battery < 20 ? "text-distress" : "text-foam/70"}`}
+              >
+                🔋 {alert.battery}%
+              </span>
+            )}
+          </div>
+        )}
+
+        <div>
+          <div className="text-lg font-semibold">{alert.boat?.name ?? "Unknown vessel"}</div>
+          <div className="text-xs text-foam/60">
+            {alert.boat?.registration_number && (
+              <span className="font-mono">{alert.boat.registration_number}</span>
+            )}
+            {alert.boat?.boat_type && <span> · {alert.boat.boat_type}</span>}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-foam/10 bg-foam/[0.03] p-3 text-xs">
+          <div className="text-[10px] uppercase tracking-wider text-foam/40">Captain</div>
+          <div className="mt-0.5 font-medium">{alert.fisherman?.full_name ?? "Unknown"}</div>
+          {alert.fisherman?.phone && <div className="text-foam/60">{alert.fisherman.phone}</div>}
+          {alert.fisherman?.national_id && (
+            <div className="text-foam/40 text-[10px]">ID {alert.fisherman.national_id}</div>
+          )}
+        </div>
+
+        <div className="text-[11px] text-foam/40">
+          BMU: {alert.bmu?.name ?? "—"} · Device:{" "}
+          <span className="font-mono text-tide">{alert.device?.device_id}</span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 text-xs">
+          <Stat label="Latitude" value={live ? live.lat.toFixed(5) : "—"} />
+          <Stat label="Longitude" value={live ? live.lng.toFixed(5) : "—"} />
+          <Stat
+            label="Accuracy"
+            value={live?.accuracy != null ? `± ${Math.round(live.accuracy)} m` : "—"}
+          />
+          <Stat label="GPS age" value={gpsAgeS != null ? `${gpsAgeS}s` : "—"} />
+        </div>
+
+        {detailTrail.length > 0 && (
+          <div className="flex items-center gap-2 text-[11px] text-foam/50 flex-wrap">
+            <Navigation className="h-3 w-3 text-tide" />
+            <span>Live tracking {detailFollowLive ? "on" : "off"}</span>
+            <button
+              onClick={() => onSetFollowLive(!detailFollowLive)}
+              className="rounded border border-foam/15 px-1.5 py-0.5 text-[10px] hover:bg-foam/10"
+            >
+              {detailFollowLive ? "Unlock map" : "Follow"}
+            </button>
+            <button
+              onClick={() => onSetShowTrail(!detailShowTrail)}
+              className="rounded border border-foam/15 px-1.5 py-0.5 text-[10px] hover:bg-foam/10"
+            >
+              {detailShowTrail ? "Hide trail" : "Show trail"} ({detailTrail.length})
+            </button>
+          </div>
+        )}
+
+        {alert.fisherman?.emergency_contact_phone && (
+          <div className="rounded-lg border border-foam/10 bg-foam/[0.04] p-2 text-[11px] text-foam/70">
+            <div className="uppercase tracking-wider text-foam/40">Emergency contact</div>
+            <div>
+              {alert.fisherman.emergency_contact_name ?? "—"} ·{" "}
+              {alert.fisherman.emergency_contact_phone}
+            </div>
+          </div>
+        )}
+
+        {/* Low battery warning */}
+        {alert.battery != null && alert.battery < 20 && (
+          <div className="rounded-lg border border-distress/40 bg-distress/10 px-3 py-2 text-[11px] text-distress">
+            ⚠️ Low battery: {alert.battery}% — device may stop transmitting soon.
+          </div>
+        )}
+
+        {/* Rescue operation panel */}
+        <div className="border-t border-foam/10 pt-4">
+          <div className="mb-2 text-[10px] uppercase tracking-wider text-foam/40">
+            Rescue Operation
+          </div>
+          {detailRescueOp ? (
+            <div className="space-y-2">
+              <div className="rounded-lg border border-tide/30 bg-tide/5 px-3 py-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-tide">
+                    {detailRescueOp.team_name ?? "Team assigned"}
+                  </span>
+                  <span className="text-foam/40">
+                    {detailRescueOp.ended_at ? "Closed" : "Active"}
+                  </span>
+                </div>
+                <div className="mt-1 text-foam/60">
+                  Started: {new Date(detailRescueOp.started_at).toLocaleString()}
+                </div>
+                {detailRescueOp.ended_at && (
+                  <div className="text-foam/60">
+                    Ended: {new Date(detailRescueOp.ended_at).toLocaleString()}
+                  </div>
+                )}
+              </div>
+              {!detailRescueOp.ended_at && (
+                <div className="space-y-1">
+                  <textarea
+                    value={detailOpNotes}
+                    onChange={(e) => onSetOpNotes(e.target.value)}
+                    placeholder="Close-out notes…"
+                    rows={2}
+                    className="w-full rounded-lg border border-foam/10 bg-ocean/60 px-2 py-1.5 text-xs text-foam outline-none focus:border-tide/60 resize-none"
+                  />
+                  <button
+                    onClick={() => onCloseRescueOp(detailRescueOp.id)}
+                    disabled={detailOpBusy}
+                    className="w-full rounded-lg border border-tide/30 px-3 py-1.5 text-xs text-tide hover:bg-tide/10 disabled:opacity-60"
+                  >
+                    {detailOpBusy ? "Saving…" : "Close operation & resolve alert"}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : isActive ? (
+            <div className="space-y-1">
+              <input
+                value={detailOpTeam}
+                onChange={(e) => onSetOpTeam(e.target.value)}
+                placeholder="Team name (e.g. Coastguard Alpha)"
+                className="w-full rounded-lg border border-foam/10 bg-ocean/60 px-2 py-1.5 text-xs text-foam outline-none focus:border-tide/60"
+              />
+              <textarea
+                value={detailOpNotes}
+                onChange={(e) => onSetOpNotes(e.target.value)}
+                placeholder="Notes / ETA…"
+                rows={2}
+                className="w-full rounded-lg border border-foam/10 bg-ocean/60 px-2 py-1.5 text-xs text-foam outline-none focus:border-tide/60 resize-none"
+              />
+              <button
+                onClick={onCreateRescueOp}
+                disabled={detailOpBusy}
+                className="w-full rounded-lg bg-tide px-3 py-1.5 text-xs font-semibold text-ocean hover:bg-tide/90 disabled:opacity-60"
+              >
+                {detailOpBusy ? "Saving…" : "Assign rescue team"}
+              </button>
+            </div>
+          ) : (
+            <div className="text-xs text-foam/40">Alert resolved — no active rescue operation.</div>
+          )}
+        </div>
+
+        <div className="pb-4">
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-foam/40">
+            Rescue workflow
+          </div>
+          <select
+            value={alert.status}
+            onChange={(e) => onSetStatus(e.target.value as AlertStatus)}
+            className="w-full rounded-lg border border-foam/10 bg-ocean/60 px-3 py-2 text-xs outline-none focus:border-tide/60"
+          >
+            {ALERT_STATUSES.map((s) => (
+              <option key={s} value={s} className="bg-ocean">
+                {ALERT_STATUS_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Shared sub-components ─────────────────────────────────────────────────
+function StatCell({
+  label,
+  value,
+  tone,
+  icon,
+}: {
+  label: string;
+  value: number;
+  tone: "distress" | "tide" | "foam" | "muted";
+  icon: React.ReactNode;
+}) {
+  const color =
+    tone === "distress"
+      ? "text-distress"
+      : tone === "tide"
+        ? "text-tide"
+        : tone === "foam"
+          ? "text-foam"
+          : "text-foam/50";
   return (
     <div className="bg-ocean px-4 py-3">
-      <div className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider ${color}`}>{icon}{label}</div>
-      <div className={`mt-1 text-2xl font-semibold tabular-nums ${tone === "muted" ? "text-foam/70" : color}`}>{value}</div>
+      <div
+        className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider ${color}`}
+      >
+        {icon}
+        {label}
+      </div>
+      <div
+        className={`mt-1 text-2xl font-semibold tabular-nums ${tone === "muted" ? "text-foam/70" : color}`}
+      >
+        {value}
+      </div>
     </div>
-  );
-}
-
-function IncidentCard({ a, now, selected, onClick }: { a: AlertJoined; now: number; selected: boolean; onClick: () => void }) {
-  const startedMs = new Date(a.started_at).getTime();
-  const isActive = ACTIVE_STATUSES.includes(a.status);
-  const isNew = a.status === "new" && !a.acknowledged_at;
-  const gpsAgeS = a.last_ping_at ? Math.floor((now - new Date(a.last_ping_at).getTime()) / 1000) : null;
-  const gpsFresh = gpsAgeS != null && gpsAgeS < 60;
-  return (
-    <button
-      onClick={onClick}
-      className={`relative block w-full px-5 py-4 text-left transition hover:bg-foam/[0.04] ${
-        selected ? (isActive ? "bg-distress/10" : "bg-foam/[0.05]") : ""
-      } ${isNew ? "animate-[flash_1.2s_ease-in-out_infinite] bg-distress/15" : ""}`}
-    >
-      {isNew && <span className="absolute left-0 top-0 h-full w-1 bg-distress" />}
-      <div className="flex items-center justify-between">
-        <div className={`inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider ${isActive ? "text-distress" : "text-tide"}`}>
-          {isActive ? <Radio className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-          {ALERT_STATUS_LABEL[a.status]}
-        </div>
-        {a.emergency_level && (
-          <span className={`rounded-md border border-foam/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${EMERGENCY_LEVEL_COLOR[a.emergency_level] ?? "text-foam"}`}>
-            {a.emergency_level}
-          </span>
-        )}
-      </div>
-      <div className="mt-2 text-sm font-semibold text-foam">
-        {a.boat?.name ?? "Unknown vessel"}
-        {a.boat?.registration_number && <span className="ml-1.5 text-[10px] font-mono text-foam/40">{a.boat.registration_number}</span>}
-      </div>
-      <div className="text-xs text-foam/60">
-        {a.fisherman?.full_name ?? "Unknown captain"} · {a.bmu?.name ?? "—"}
-      </div>
-      <div className="mt-1.5 flex items-center justify-between font-mono text-[10px] text-foam/40 tabular-nums">
-        <span className="inline-flex items-center gap-1"><span className={`h-1.5 w-1.5 rounded-full ${gpsFresh ? "bg-tide" : "bg-yellow-500/70"}`} />GPS {gpsAgeS != null ? `${gpsAgeS}s` : "—"}</span>
-        {a.battery != null && <span className={a.battery < 20 ? "text-distress" : ""}>🔋 {a.battery}%</span>}
-        <span>at sea {fmtDuration(now - startedMs)}</span>
-      </div>
-    </button>
   );
 }
 
 function EmergencyBanner({
-  count, topAlert, muted, audioReady, onEnableAudio, onMute, onAcknowledge, onView,
+  count,
+  topAlert,
+  muted,
+  audioReady,
+  onEnableAudio,
+  onMute,
+  onAcknowledge,
+  onView,
 }: {
   count: number;
   topAlert: AlertJoined;
@@ -387,340 +1108,42 @@ function EmergencyBanner({
             {count > 1 ? `${count} NEW SOS INCIDENTS` : "NEW SOS INCIDENT"}
           </div>
           <div className="text-base font-semibold">
-            {topAlert.boat?.name ?? "Unknown vessel"} · {topAlert.fisherman?.full_name ?? "Unknown captain"}
-            {topAlert.emergency_level && <span className="ml-2 rounded bg-black/25 px-1.5 py-0.5 text-[10px]">{topAlert.emergency_level}</span>}
+            {topAlert.boat?.name ?? "Unknown vessel"} ·{" "}
+            {topAlert.fisherman?.full_name ?? "Unknown captain"}
+            {topAlert.emergency_level && (
+              <span className="ml-2 rounded bg-black/25 px-1.5 py-0.5 text-[10px]">
+                {topAlert.emergency_level}
+              </span>
+            )}
           </div>
         </div>
-        <button onClick={onView} className="rounded-lg bg-black/30 px-3 py-1.5 text-xs font-semibold hover:bg-black/40">View incident</button>
-        <button onClick={onAcknowledge} className="rounded-lg bg-foam px-3 py-1.5 text-xs font-semibold text-distress hover:bg-foam/90">Acknowledge all</button>
+        <button
+          onClick={onView}
+          className="rounded-lg bg-black/30 px-3 py-1.5 text-xs font-semibold hover:bg-black/40"
+        >
+          View incident
+        </button>
+        <button
+          onClick={onAcknowledge}
+          className="rounded-lg bg-foam px-3 py-1.5 text-xs font-semibold text-distress hover:bg-foam/90"
+        >
+          Acknowledge all
+        </button>
         {!audioReady ? (
-          <button onClick={onEnableAudio} className="rounded-lg border border-foam/40 px-3 py-1.5 text-xs hover:bg-foam/10">Enable sound</button>
+          <button
+            onClick={onEnableAudio}
+            className="inline-flex animate-bounce items-center gap-1.5 rounded-lg bg-yellow-400 px-3 py-1.5 text-xs font-bold text-black hover:bg-yellow-300"
+          >
+            <Volume2 className="h-3.5 w-3.5" /> Enable sound
+          </button>
         ) : (
-          <button onClick={onMute} className={`rounded-lg border border-foam/40 px-3 py-1.5 text-xs hover:bg-foam/10 ${muted ? "opacity-50" : ""}`}>
+          <button
+            onClick={onMute}
+            className={`rounded-lg border border-foam/40 px-3 py-1.5 text-xs hover:bg-foam/10 ${muted ? "opacity-50" : ""}`}
+          >
             {muted ? "Muted" : "Mute alarm"}
           </button>
         )}
-      </div>
-    </div>
-  );
-}
-
-function EmptyMap() {
-  return (
-    <div className="grid h-full min-h-[400px] place-items-center bg-ocean">
-      <div className="text-center text-foam/50">
-        <Waves className="mx-auto h-10 w-10 text-tide/50" />
-        <div className="mt-4 text-sm">Awaiting distress signal…</div>
-        <div className="mt-1 text-xs text-foam/40">Hardware devices push to <span className="font-mono">/api/public/ingest/sos</span></div>
-      </div>
-    </div>
-  );
-}
-
-function AlertDetail({ alert, now, onUpdated }: { alert: AlertJoined; now: number; onUpdated: () => void }) {
-  const mapEl = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<LMap | null>(null);
-  const markerRef = useRef<LMarker | null>(null);
-  const trailRef = useRef<import("leaflet").Polyline | null>(null);
-  const lastIdRef = useRef<string | null>(null);
-  const [latest, setLatest] = useState<GpsLog | null>(null);
-  const [trail, setTrail] = useState<GpsLog[]>([]);
-  const [followLive, setFollowLive] = useState(true);
-  const [showTrail, setShowTrail] = useState(true);
-  const [LRef, setLRef] = useState<typeof import("leaflet") | null>(null);
-  const [rescueOp, setRescueOp] = useState<RescueOperation | null>(null);
-  const [opBusy, setOpBusy] = useState(false);
-  const [opNotes, setOpNotes] = useState("");
-  const [opTeam, setOpTeam] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    import("leaflet").then((mod) => {
-      if (!cancelled) setLRef((mod.default ?? mod) as typeof import("leaflet"));
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  // Subscribe to latest GPS for this alert
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      const [{ data: logs }, { data: op }] = await Promise.all([
-        supabase.from("gps_logs").select("*").eq("alert_id", alert.id)
-          .order("recorded_at", { ascending: false }).limit(200),
-        supabase.from("rescue_operations").select("*").eq("alert_id", alert.id)
-          .order("started_at", { ascending: false }).limit(1),
-      ]);
-      if (!cancelled) {
-        const allLogs = (logs ?? []) as GpsLog[];
-        setLatest(allLogs[0] ?? null);
-        setTrail([...allLogs].reverse());
-        setRescueOp((op?.[0] as RescueOperation) ?? null);
-        if (op?.[0]) { setOpNotes((op[0] as RescueOperation).notes ?? ""); setOpTeam((op[0] as RescueOperation).team_name ?? ""); }
-      }
-    }
-    load();
-    const ch = supabase
-      .channel(`gps-${alert.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "gps_logs", filter: `alert_id=eq.${alert.id}` },
-        (payload) => {
-          const log = payload.new as GpsLog;
-          setLatest(log);
-          setTrail((prev) => [...prev, log]);
-        },
-      )
-      .on("postgres_changes", { event: "*", schema: "public", table: "rescue_operations", filter: `alert_id=eq.${alert.id}` },
-        () => load(),
-      )
-      .subscribe();
-    return () => { cancelled = true; supabase.removeChannel(ch); };
-  }, [alert.id]);
-
-  const live: { lat: number; lng: number; accuracy: number | null } | null =
-    latest ? { lat: latest.lat, lng: latest.lng, accuracy: latest.accuracy }
-    : alert.last_lat != null && alert.last_lng != null
-    ? { lat: alert.last_lat, lng: alert.last_lng, accuracy: alert.last_accuracy ?? null }
-    : null;
-
-  // Init map for this alert
-  useEffect(() => {
-    if (!LRef || !mapEl.current) return;
-    if (lastIdRef.current !== alert.id) {
-      mapRef.current?.remove();
-      mapRef.current = null;
-      markerRef.current = null;
-      trailRef.current = null;
-    }
-    if (!mapRef.current) {
-      const center: [number, number] = live ? [live.lat, live.lng] : [-4.0435, 39.6682];
-      const map = LRef.map(mapEl.current, { zoomControl: true, attributionControl: false }).setView(center, 14);
-      LRef.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom: 19 }).addTo(map);
-      mapRef.current = map;
-      lastIdRef.current = alert.id;
-    }
-  }, [LRef, alert.id, live]);
-
-  // GPS trail polyline
-  useEffect(() => {
-    if (!LRef || !mapRef.current) return;
-    const pts: [number, number][] = trail.map((g) => [g.lat, g.lng]);
-    if (trailRef.current) {
-      trailRef.current.setLatLngs(pts);
-    } else if (pts.length > 1) {
-      trailRef.current = LRef.polyline(pts, {
-        color: "#4dd9c0", weight: 2, opacity: 0.7, dashArray: "4 4",
-      }).addTo(mapRef.current);
-    }
-    if (trailRef.current) {
-      trailRef.current.setStyle({ opacity: showTrail ? 0.7 : 0 });
-    }
-  }, [LRef, trail, showTrail]);
-
-  // Single blinking marker; no trail
-  useEffect(() => {
-    if (!LRef || !mapRef.current || !live) return;
-    const pos: [number, number] = [live.lat, live.lng];
-    if (!markerRef.current) {
-      const icon = LRef.divIcon({
-        className: "",
-        html: `<div style="position:relative;width:28px;height:28px">
-          <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(225,53,69,0.4);animation:sos-pulse 1.2s ease-out infinite"></div>
-          <div style="position:absolute;inset:0;border-radius:9999px;background:rgba(225,53,69,0.4);animation:sos-pulse 1.2s ease-out infinite;animation-delay:.6s"></div>
-          <div style="position:absolute;inset:8px;border-radius:9999px;background:#e13545;box-shadow:0 0 0 3px rgba(255,255,255,0.95)"></div>
-        </div>`,
-        iconSize: [28, 28], iconAnchor: [14, 14],
-      });
-      markerRef.current = LRef.marker(pos, { icon }).addTo(mapRef.current);
-    } else {
-      markerRef.current.setLatLng(pos);
-    }
-    if (followLive && ACTIVE_STATUSES.includes(alert.status)) {
-      mapRef.current.panTo(pos, { animate: true, duration: 0.6 });
-    }
-  }, [LRef, live?.lat, live?.lng, followLive, alert.status]);
-
-  useEffect(() => () => {
-    mapRef.current?.remove();
-    mapRef.current = null;
-    markerRef.current = null;
-    trailRef.current = null;
-    lastIdRef.current = null;
-  }, []);
-
-  async function createRescueOp() {
-    setOpBusy(true);
-    try {
-      await supabase.from("rescue_operations").insert({
-        alert_id: alert.id,
-        team_name: opTeam || null,
-        notes: opNotes || null,
-        status: "assigned",
-      });
-      await supabase.from("sos_alerts").update({ status: "assigned" }).eq("id", alert.id);
-      onUpdated();
-    } finally { setOpBusy(false); }
-  }
-
-  async function closeRescueOp(opId: string) {
-    setOpBusy(true);
-    try {
-      await supabase.from("rescue_operations").update({ ended_at: new Date().toISOString(), status: "resolved", notes: opNotes || null }).eq("id", opId);
-      await supabase.from("sos_alerts").update({ status: "resolved", resolved_at: new Date().toISOString() }).eq("id", alert.id);
-      onUpdated();
-    } finally { setOpBusy(false); }
-  }
-
-  async function setStatus(next: AlertStatus) {
-    const patch: Partial<SOSAlertRow> = { status: next };
-    if (next === "acknowledged" && !alert.acknowledged_at) patch.acknowledged_at = new Date().toISOString();
-    if ((next === "resolved" || next === "closed") && !alert.resolved_at) patch.resolved_at = new Date().toISOString();
-    await supabase.from("sos_alerts").update(patch).eq("id", alert.id);
-    onUpdated();
-  }
-
-  const isActive = ACTIVE_STATUSES.includes(alert.status);
-  const gpsAgeS = latest ? Math.floor((now - new Date(latest.recorded_at).getTime()) / 1000) : null;
-
-  return (
-    <div className="relative h-full min-h-[500px]">
-      <div ref={mapEl} className="absolute inset-0 bg-[#0a1929]" />
-      <style>{`
-        @keyframes sos-pulse {0%{transform:scale(0.6);opacity:1}100%{transform:scale(2.2);opacity:0}}
-        @keyframes flash {0%,100%{opacity:1}50%{opacity:.55}}
-        .leaflet-container{background:#0a1929;font-family:inherit}
-        .leaflet-control-zoom a{background:rgba(15,40,60,0.9)!important;color:#eaf4f4!important;border-color:rgba(255,255,255,0.08)!important}
-      `}</style>
-
-      <div className="absolute left-4 top-4 z-[400] max-h-[calc(100vh-140px)] w-[360px] overflow-y-auto rounded-2xl border border-foam/10 bg-ocean/90 p-4 backdrop-blur-md">
-        <div className="flex items-center justify-between">
-          <div className={`inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider ${isActive ? "text-distress" : "text-tide"}`}>
-            {isActive
-              ? <><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-distress" /> {ALERT_STATUS_LABEL[alert.status]}</>
-              : <><CheckCircle2 className="h-3.5 w-3.5" /> {ALERT_STATUS_LABEL[alert.status]}</>}
-          </div>
-          <div className="text-[11px] text-foam/50">{fmtDuration(now - new Date(alert.started_at).getTime())}</div>
-        </div>
-
-        {(alert.emergency_level || alert.battery != null) && (
-          <div className="mt-2 flex items-center gap-2 text-[11px]">
-            {alert.emergency_level && (
-              <span className={`rounded-md border border-foam/15 px-2 py-0.5 font-semibold uppercase tracking-wider ${EMERGENCY_LEVEL_COLOR[alert.emergency_level] ?? "text-foam"}`}>
-                {alert.emergency_level}
-              </span>
-            )}
-            {alert.battery != null && (
-              <span className={`rounded-md border border-foam/15 px-2 py-0.5 tabular-nums ${alert.battery < 20 ? "text-distress" : "text-foam/70"}`}>
-                🔋 {alert.battery}%
-              </span>
-            )}
-          </div>
-        )}
-
-        <div className="mt-3 text-lg font-semibold">{alert.boat?.name ?? "Unknown vessel"}</div>
-        <div className="text-xs text-foam/60">
-          {alert.boat?.registration_number && <span className="font-mono">{alert.boat.registration_number}</span>}
-          {alert.boat?.boat_type && <span> · {alert.boat.boat_type}</span>}
-        </div>
-
-        <div className="mt-3 rounded-lg border border-foam/10 bg-foam/[0.03] p-3 text-xs">
-          <div className="text-[10px] uppercase tracking-wider text-foam/40">Captain</div>
-          <div className="mt-0.5 font-medium">{alert.fisherman?.full_name ?? "Unknown"}</div>
-          {alert.fisherman?.phone && <div className="text-foam/60">{alert.fisherman.phone}</div>}
-          {alert.fisherman?.national_id && <div className="text-foam/40 text-[10px]">ID {alert.fisherman.national_id}</div>}
-        </div>
-
-        <div className="mt-3 text-[11px] text-foam/40">
-          BMU: {alert.bmu?.name ?? "—"} · Device: <span className="font-mono text-tide">{alert.device?.device_id}</span>
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-          <Stat label="Latitude" value={live ? live.lat.toFixed(5) : "—"} />
-          <Stat label="Longitude" value={live ? live.lng.toFixed(5) : "—"} />
-          <Stat label="Accuracy" value={live?.accuracy != null ? `± ${Math.round(live.accuracy)} m` : "—"} />
-          <Stat label="GPS age" value={gpsAgeS != null ? `${gpsAgeS}s` : "—"} />
-        </div>
-
-        {latest && (
-          <div className="mt-3 flex items-center gap-2 text-[11px] text-foam/50 flex-wrap">
-            <Navigation className="h-3 w-3 text-tide" />
-            <span>Live tracking {followLive ? "on" : "off"}</span>
-            <button onClick={() => setFollowLive((v) => !v)} className="rounded border border-foam/15 px-1.5 py-0.5 text-[10px] hover:bg-foam/10">
-              {followLive ? "Unlock map" : "Follow"}
-            </button>
-            <button onClick={() => setShowTrail((v) => !v)} className="rounded border border-foam/15 px-1.5 py-0.5 text-[10px] hover:bg-foam/10">
-              {showTrail ? "Hide trail" : "Show trail"} ({trail.length})
-            </button>
-          </div>
-        )}
-
-        {alert.fisherman?.emergency_contact_phone && (
-          <div className="mt-3 rounded-lg border border-foam/10 bg-foam/[0.04] p-2 text-[11px] text-foam/70">
-            <div className="uppercase tracking-wider text-foam/40">Emergency contact</div>
-            <div>{alert.fisherman.emergency_contact_name ?? "—"} · {alert.fisherman.emergency_contact_phone}</div>
-          </div>
-        )}
-
-        {/* Low battery warning */}
-        {alert.battery != null && alert.battery < 20 && (
-          <div className="mt-3 rounded-lg border border-distress/40 bg-distress/10 px-3 py-2 text-[11px] text-distress">
-            ⚠️ Low battery: {alert.battery}% — device may stop transmitting soon.
-          </div>
-        )}
-
-        {/* Rescue operation panel */}
-        <div className="mt-4 border-t border-foam/10 pt-4">
-          <div className="mb-2 text-[10px] uppercase tracking-wider text-foam/40">Rescue Operation</div>
-          {rescueOp ? (
-            <div className="space-y-2">
-              <div className="rounded-lg border border-tide/30 bg-tide/5 px-3 py-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-tide">{rescueOp.team_name ?? "Team assigned"}</span>
-                  <span className="text-foam/40">{rescueOp.ended_at ? "Closed" : "Active"}</span>
-                </div>
-                <div className="mt-1 text-foam/60">Started: {new Date(rescueOp.started_at).toLocaleString()}</div>
-                {rescueOp.ended_at && <div className="text-foam/60">Ended: {new Date(rescueOp.ended_at).toLocaleString()}</div>}
-              </div>
-              {!rescueOp.ended_at && (
-                <div className="space-y-1">
-                  <textarea value={opNotes} onChange={(e) => setOpNotes(e.target.value)}
-                    placeholder="Close-out notes…" rows={2}
-                    className="w-full rounded-lg border border-foam/10 bg-ocean/60 px-2 py-1.5 text-xs text-foam outline-none focus:border-tide/60 resize-none" />
-                  <button onClick={() => closeRescueOp(rescueOp.id)} disabled={opBusy}
-                    className="w-full rounded-lg border border-tide/30 px-3 py-1.5 text-xs text-tide hover:bg-tide/10 disabled:opacity-60">
-                    {opBusy ? "Saving…" : "Close operation & resolve alert"}
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : isActive ? (
-            <div className="space-y-1">
-              <input value={opTeam} onChange={(e) => setOpTeam(e.target.value)} placeholder="Team name (e.g. Coastguard Alpha)"
-                className="w-full rounded-lg border border-foam/10 bg-ocean/60 px-2 py-1.5 text-xs text-foam outline-none focus:border-tide/60" />
-              <textarea value={opNotes} onChange={(e) => setOpNotes(e.target.value)}
-                placeholder="Notes / ETA…" rows={2}
-                className="w-full rounded-lg border border-foam/10 bg-ocean/60 px-2 py-1.5 text-xs text-foam outline-none focus:border-tide/60 resize-none" />
-              <button onClick={createRescueOp} disabled={opBusy}
-                className="w-full rounded-lg bg-tide px-3 py-1.5 text-xs font-semibold text-ocean hover:bg-tide/90 disabled:opacity-60">
-                {opBusy ? "Saving…" : "Assign rescue team"}
-              </button>
-            </div>
-          ) : (
-            <div className="text-xs text-foam/40">Alert resolved — no active rescue operation.</div>
-          )}
-        </div>
-
-        <div className="mt-4">
-          <div className="mb-1 text-[10px] uppercase tracking-wider text-foam/40">Rescue workflow</div>
-          <select
-            value={alert.status}
-            onChange={(e) => setStatus(e.target.value as AlertStatus)}
-            className="w-full rounded-lg border border-foam/10 bg-ocean/60 px-3 py-2 text-xs outline-none focus:border-tide/60"
-          >
-            {ALERT_STATUSES.map((s) => (
-              <option key={s} value={s} className="bg-ocean">{ALERT_STATUS_LABEL[s]}</option>
-            ))}
-          </select>
-        </div>
       </div>
     </div>
   );

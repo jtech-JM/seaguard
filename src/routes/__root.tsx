@@ -78,13 +78,30 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "SEAGUARD" },
-      { name: "description", content: "Emergency SOS and rescue coordination for fishermen at sea." },
+      {
+        name: "description",
+        content: "Emergency SOS and rescue coordination for fishermen at sea.",
+      },
       { property: "og:title", content: "SEAGUARD" },
       { name: "twitter:title", content: "SEAGUARD" },
-      { property: "og:description", content: "Emergency SOS and rescue coordination for fishermen at sea." },
-      { name: "twitter:description", content: "Emergency SOS and rescue coordination for fishermen at sea." },
-      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/5b1292b8-bc78-4191-817e-650dc9e9359a" },
-      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/5b1292b8-bc78-4191-817e-650dc9e9359a" },
+      {
+        property: "og:description",
+        content: "Emergency SOS and rescue coordination for fishermen at sea.",
+      },
+      {
+        name: "twitter:description",
+        content: "Emergency SOS and rescue coordination for fishermen at sea.",
+      },
+      {
+        property: "og:image",
+        content:
+          "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/5b1292b8-bc78-4191-817e-650dc9e9359a",
+      },
+      {
+        name: "twitter:image",
+        content:
+          "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/5b1292b8-bc78-4191-817e-650dc9e9359a",
+      },
       { name: "twitter:card", content: "summary_large_image" },
       { property: "og:type", content: "website" },
     ],

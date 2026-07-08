@@ -6,27 +6,27 @@ A real-time maritime operations platform connecting fishermen, Beach Management 
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | TanStack Start (React + SSR) |
-| Routing | TanStack Router (file-based) |
-| Database | Supabase (PostgreSQL + Realtime) |
-| Auth | Supabase Auth (email/password + Google OAuth) |
-| Styling | Tailwind CSS v4 |
-| Map | Leaflet (CartoDB dark tiles — no API key needed) |
-| Build | Vite + Bun |
-| Deploy | Cloudflare Workers (via Nitro) |
+| Layer     | Technology                                       |
+| --------- | ------------------------------------------------ |
+| Framework | TanStack Start (React + SSR)                     |
+| Routing   | TanStack Router (file-based)                     |
+| Database  | Supabase (PostgreSQL + Realtime)                 |
+| Auth      | Supabase Auth (email/password + Google OAuth)    |
+| Styling   | Tailwind CSS v4                                  |
+| Map       | Leaflet (CartoDB dark tiles — no API key needed) |
+| Build     | Vite + Bun                                       |
+| Deploy    | Cloudflare Workers (via Nitro)                   |
 
 ---
 
 ## Roles
 
-| Role | Dashboard | Access |
-|------|-----------|--------|
-| `admin` | `/admin` | User & role management, fisherman account linking |
-| `bmu_officer` | `/bmu` | Register fishermen, boats, SOS devices; approve sea trips |
-| `rescue_officer` | `/rescue` | Live SOS incident queue, GPS map, rescue operations |
-| `fisherman` | `/fisherman` | Sea trip check-in/out, device status, trip history |
+| Role             | Dashboard    | Access                                                    |
+| ---------------- | ------------ | --------------------------------------------------------- |
+| `admin`          | `/admin`     | User & role management, fisherman account linking         |
+| `bmu_officer`    | `/bmu`       | Register fishermen, boats, SOS devices; approve sea trips |
+| `rescue_officer` | `/rescue`    | Live SOS incident queue, GPS map, rescue operations       |
+| `fisherman`      | `/fisherman` | Sea trip check-in/out, device status, trip history        |
 
 Every new signup defaults to `fisherman`. An admin must promote accounts to other roles via the Admin console.
 
@@ -135,15 +135,15 @@ Then log in and use the Admin console to assign roles to everyone else.
 
 ## Database Migrations
 
-| File | Description |
-|------|-------------|
-| `20260625...` | Initial schema: profiles, roles, devices, alerts, GPS logs, notifications |
-| `20260701...` | Add `device_secret` column, remove public device read policy |
-| `20260702...` | Add `battery` and `emergency_level` columns to alerts + GPS logs |
-| `20260703...` | Add `rescue_officer` + `fisherman` roles, sea trips, trip crew, trip history |
-| `20260705...` | Overdue trip auto-detection (pg_cron), realtime publication extensions |
-| `20260706000000` | Add `rescue_officer` enum value |
-| `20260706000001` | Migrate old roles, add fisherman-link constraint |
+| File             | Description                                                                  |
+| ---------------- | ---------------------------------------------------------------------------- |
+| `20260625...`    | Initial schema: profiles, roles, devices, alerts, GPS logs, notifications    |
+| `20260701...`    | Add `device_secret` column, remove public device read policy                 |
+| `20260702...`    | Add `battery` and `emergency_level` columns to alerts + GPS logs             |
+| `20260703...`    | Add `rescue_officer` + `fisherman` roles, sea trips, trip crew, trip history |
+| `20260705...`    | Overdue trip auto-detection (pg_cron), realtime publication extensions       |
+| `20260706000000` | Add `rescue_officer` enum value                                              |
+| `20260706000001` | Migrate old roles, add fisherman-link constraint                             |
 
 ---
 
@@ -151,17 +151,17 @@ Then log in and use the Admin console to assign roles to everyone else.
 
 TanStack Start uses **file-based routing**. Every `.tsx` in `src/routes/` is a route.
 
-| File | URL |
-|------|-----|
-| `index.tsx` | `/` → redirects based on session |
-| `auth.tsx` | `/auth` |
-| `_authenticated/admin.tsx` | `/admin` |
-| `_authenticated/bmu.tsx` | `/bmu` |
-| `_authenticated/rescue.tsx` | `/rescue` |
-| `_authenticated/fisherman.tsx` | `/fisherman` |
-| `api/public/ingest/sos.ts` | `/api/public/ingest/sos` |
-| `api/public/ingest/location.ts` | `/api/public/ingest/location` |
-| `api/public/ingest/cancel.ts` | `/api/public/ingest/cancel` |
+| File                            | URL                              |
+| ------------------------------- | -------------------------------- |
+| `index.tsx`                     | `/` → redirects based on session |
+| `auth.tsx`                      | `/auth`                          |
+| `_authenticated/admin.tsx`      | `/admin`                         |
+| `_authenticated/bmu.tsx`        | `/bmu`                           |
+| `_authenticated/rescue.tsx`     | `/rescue`                        |
+| `_authenticated/fisherman.tsx`  | `/fisherman`                     |
+| `api/public/ingest/sos.ts`      | `/api/public/ingest/sos`         |
+| `api/public/ingest/location.ts` | `/api/public/ingest/location`    |
+| `api/public/ingest/cancel.ts`   | `/api/public/ingest/cancel`      |
 
 `routeTree.gen.ts` is auto-generated by TanStack Router. Do not edit it.
 

@@ -120,16 +120,31 @@ function AuthPage() {
           </button>
 
           <div className="my-5 flex items-center gap-3 text-[11px] uppercase tracking-wider text-foam/40">
-            <div className="h-px flex-1 bg-foam/10" /> or email <div className="h-px flex-1 bg-foam/10" />
+            <div className="h-px flex-1 bg-foam/10" /> or email{" "}
+            <div className="h-px flex-1 bg-foam/10" />
           </div>
 
           <form onSubmit={handleEmail} className="space-y-3">
             {mode === "signup" && (
-              <Field label="Full name" value={fullName} onChange={setFullName} type="text" required />
+              <Field
+                label="Full name"
+                value={fullName}
+                onChange={setFullName}
+                type="text"
+                required
+              />
             )}
             <Field label="Email" value={email} onChange={setEmail} type="email" required />
-            <Field label="Password" value={password} onChange={setPassword} type="password" required />
-            {err && <div className="rounded-lg bg-distress/15 px-3 py-2 text-xs text-distress">{err}</div>}
+            <Field
+              label="Password"
+              value={password}
+              onChange={setPassword}
+              type="password"
+              required
+            />
+            {err && (
+              <div className="rounded-lg bg-distress/15 px-3 py-2 text-xs text-distress">{err}</div>
+            )}
             <button
               type="submit"
               disabled={loading}
@@ -144,9 +159,7 @@ function AuthPage() {
             onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
             className="mt-4 w-full text-center text-xs text-foam/60 hover:text-foam"
           >
-            {mode === "signin"
-              ? "No account yet? Create one"
-              : "Already registered? Sign in"}
+            {mode === "signin" ? "No account yet? Create one" : "Already registered? Sign in"}
           </button>
         </div>
       </div>

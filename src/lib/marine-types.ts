@@ -1,11 +1,6 @@
 // Shared types for the Marine Rescue platform.
 export type AlertStatus =
-  | "new"
-  | "acknowledged"
-  | "assigned"
-  | "in_progress"
-  | "resolved"
-  | "closed";
+  "new" | "acknowledged" | "assigned" | "in_progress" | "resolved" | "closed";
 
 export const ALERT_STATUSES: AlertStatus[] = [
   "new",
@@ -82,14 +77,12 @@ export interface SOSAlertRow {
   last_ping_at: string | null;
   notes: string | null;
   battery: number | null;
-  emergency_level: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null;
+  emergency_level: "LOW" | "HIGH" | null;
 }
 
 export const EMERGENCY_LEVEL_COLOR: Record<string, string> = {
   LOW: "text-tide",
-  MEDIUM: "text-yellow-400",
-  HIGH: "text-orange-400",
-  CRITICAL: "text-distress",
+  HIGH: "text-distress",
 };
 
 export interface GpsLog {

@@ -4,11 +4,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { LogOut, Shield, UserCog, Link2, X } from "lucide-react";
 import type { AppRole } from "@/lib/use-role";
 import { STAFF_ROLES } from "@/lib/use-role";
-import { requireRole } from "@/lib/route-guard";
+import { requireRole, type RouteContext } from "@/lib/route-guard";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   ssr: false,
-  beforeLoad: ({ context }) => requireRole(context as any, ["admin"]),
+  beforeLoad: ({ context }) => requireRole(context as RouteContext, ["admin"]),
   head: () => ({
     meta: [
       { title: "Administrator — MarineRescue" },
@@ -22,18 +22,25 @@ export const Route = createFileRoute("/_authenticated/admin")({
 const ROLES: AppRole[] = ["admin", "bmu_officer", "rescue_officer", "fisherman"];
 
 const ROLE_LABEL: Record<AppRole, string> = {
-  admin:          "Admin",
-  bmu_officer:    "BMU Officer",
+  admin: "Admin",
+  bmu_officer: "BMU Officer",
   rescue_officer: "Rescue Officer",
-  fisherman:      "Fisherman",
+  fisherman: "Fisherman",
 };
 
 interface UserRow {
-  id: string; full_name: string | null; email: string | null;
-  roles: AppRole[]; fisherman_id: string | null;
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  roles: AppRole[];
+  fisherman_id: string | null;
 }
 
-interface FishermanOption { id: string; full_name: string | null; email: string | null; fisherman_id: string | null; }
+interface FishermanOption {
+  id: string;
+  full_name: string | null;
+  phone: string | null;
+}
 
 function AdminDashboard() {
   const navigate = useNavigate();
@@ -46,10 +53,17 @@ function AdminDashboard() {
     const { data: u } = await supabase.auth.getUser();
     if (!u.user) return;
     setMe(u.user.id);
-    const { data: hasAdmin } = await supabase.rpc("has_role", { _user_id: u.user.id, _role: "admin" });
+    const { data: hasAdmin } = await supabase.rpc("has_role", {
+      _user_id: u.user.id,
+      _role: "admin",
+    });
     setIsAdmin(!!hasAdmin);
     if (!hasAdmin) return;
-    const { data: profs } = await supabase.from("profiles").select("id, full_name, email, fisherman_id").order("created_at", { ascending: false }).limit(200);
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, fisherman_id")
+      .order("created_at", { ascending: false })
+      .limit(200);
     const { data: roles } = await supabase.from("user_roles").select("user_id, role");
     const rolesByUser = new Map<string, AppRole[]>();
     for (const r of roles ?? []) {
@@ -57,12 +71,24 @@ function AdminDashboard() {
       arr.push(r.role as AppRole);
       rolesByUser.set(r.user_id as string, arr);
     }
-    setUsers((profs ?? []).map((p: { id: string; full_name: string | null; email: string | null; fisherman_id: string | null }) => ({
-      ...p, roles: rolesByUser.get(p.id) ?? [],
-    })));
+    setUsers(
+      (profs ?? []).map(
+        (p: {
+          id: string;
+          full_name: string | null;
+          email: string | null;
+          fisherman_id: string | null;
+        }) => ({
+          ...p,
+          roles: rolesByUser.get(p.id) ?? [],
+        }),
+      ),
+    );
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   async function toggleRole(userId: string, role: AppRole, has: boolean) {
     if (has) {
@@ -73,19 +99,27 @@ function AdminDashboard() {
     load();
   }
 
-  async function signOut() { await supabase.auth.signOut(); navigate({ to: "/auth" }); }
+  async function signOut() {
+    await supabase.auth.signOut();
+    navigate({ to: "/auth" });
+  }
 
   return (
     <div className="min-h-screen bg-ocean text-foam">
       <header className="flex items-center justify-between border-b border-foam/10 px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="grid h-9 w-9 place-items-center rounded-lg bg-distress/20 ring-1 ring-distress/40"><Shield className="h-4 w-4 text-distress" /></div>
+          <div className="grid h-9 w-9 place-items-center rounded-lg bg-distress/20 ring-1 ring-distress/40">
+            <Shield className="h-4 w-4 text-distress" />
+          </div>
           <div>
             <div className="text-[11px] uppercase tracking-[0.2em] text-foam/50">Administrator</div>
             <div className="text-sm font-semibold">User & Role Management</div>
           </div>
         </div>
-        <button onClick={signOut} className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 text-xs hover:bg-foam/10">
+        <button
+          onClick={signOut}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 text-xs hover:bg-foam/10"
+        >
           <LogOut className="h-3.5 w-3.5" /> Sign out
         </button>
       </header>
@@ -106,7 +140,11 @@ function AdminDashboard() {
               <thead className="bg-foam/[0.02] text-[10px] uppercase tracking-wider text-foam/50">
                 <tr>
                   <th className="px-4 py-2">User</th>
-                  {ROLES.map((r) => <th key={r} className="px-3 py-2 text-center">{ROLE_LABEL[r]}</th>)}
+                  {ROLES.map((r) => (
+                    <th key={r} className="px-3 py-2 text-center">
+                      {ROLE_LABEL[r]}
+                    </th>
+                  ))}
                   <th className="px-3 py-2 text-center">Fisherman</th>
                 </tr>
               </thead>
@@ -156,7 +194,10 @@ function AdminDashboard() {
         <LinkFishermanModal
           user={linkUser}
           onClose={() => setLinkUser(null)}
-          onSaved={() => { setLinkUser(null); load(); }}
+          onSaved={() => {
+            setLinkUser(null);
+            load();
+          }}
         />
       )}
     </div>
@@ -178,24 +219,12 @@ function LinkFishermanModal({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    // Only load profiles whose primary role is 'fisherman' —
-    // never allow linking a staff account (admin/bmu_officer/rescue_officer) to a fisherman record
     supabase
-      .from("profiles")
-      .select("id, full_name, email, fisherman_id")
+      .from("fishermen")
+      .select("id, full_name, phone")
       .order("full_name")
-      .then(async ({ data: allProfiles }) => {
-        if (!allProfiles) return;
-        // Get all user_ids that have a staff role
-        const { data: staffRoles } = await supabase
-          .from("user_roles")
-          .select("user_id")
-          .in("role", STAFF_ROLES);
-        const staffIds = new Set((staffRoles ?? []).map((r: { user_id: string }) => r.user_id));
-        // Filter: only show profiles that have NO staff role
-        setFishermen(
-          (allProfiles as FishermanOption[]).filter((p) => !staffIds.has(p.id))
-        );
+      .then(({ data }) => {
+        if (data) setFishermen(data as FishermanOption[]);
       });
   }, []);
 
@@ -233,22 +262,29 @@ function LinkFishermanModal({
           </button>
         </div>
         <label className="block">
-          <span className="text-[11px] uppercase tracking-wider text-foam/50">Fisherman record</span>
+          <span className="text-[11px] uppercase tracking-wider text-foam/50">
+            Fisherman record
+          </span>
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value)}
             className="mt-1 w-full rounded-lg border border-foam/10 bg-foam/[0.04] px-3 py-2 text-sm text-foam outline-none focus:border-tide/60"
           >
-            <option value="" className="bg-ocean">— Unlink —</option>
+            <option value="" className="bg-ocean">
+              — Unlink —
+            </option>
             {fishermen.map((f) => (
               <option key={f.id} value={f.id} className="bg-ocean">
-                {f.full_name ?? "—"} ({f.email})
+                {f.full_name ?? "—"} {f.phone ? `(${f.phone})` : ""}
               </option>
             ))}
           </select>
         </label>
         <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg border border-foam/15 px-3 py-2 text-sm text-foam/80 hover:bg-foam/10">
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-foam/15 px-3 py-2 text-sm text-foam/80 hover:bg-foam/10"
+          >
             Cancel
           </button>
           <button

@@ -1,6 +1,6 @@
 # SEAGUARD Hardware Integration Guide
 
-This document describes how a physical SOS device (ESP32 + GPS module + SIM7600 cellular modem) communicates with the SEAGUARD platform.
+This document describes how a physical SOS device (ESP32 + GPS module + SIM800L cellular modem + SSD1306 OLED) communicates with the SEAGUARD platform.
 
 ---
 
@@ -53,14 +53,14 @@ Send this **once when the SOS button is pressed**. Creates a new incident on the
 }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `device_id` | string | ✅ | Must match the registered device ID |
-| `lat` | number | ✅ | Latitude in decimal degrees (−90 to 90) |
-| `lng` | number | ✅ | Longitude in decimal degrees (−180 to 180) |
-| `accuracy` | number | ❌ | GPS accuracy in metres |
-| `battery` | number | ❌ | Battery percentage 0–100 |
-| `level` | string | ❌ | `LOW` \| `MEDIUM` \| `HIGH` \| `CRITICAL` |
+| Field       | Type   | Required | Description                                               |
+| ----------- | ------ | -------- | --------------------------------------------------------- |
+| `device_id` | string | ✅       | Must match the registered device ID                       |
+| `lat`       | number | ✅       | Latitude in decimal degrees (−90 to 90)                   |
+| `lng`       | number | ✅       | Longitude in decimal degrees (−180 to 180)                |
+| `accuracy`  | number | ❌       | GPS accuracy in metres                                    |
+| `battery`   | number | ❌       | Battery percentage 0–100                                  |
+| `level`     | string | ❌       | `LOW` \| `HIGH` — single press = LOW, double press = HIGH |
 
 **Success response (200):**
 
@@ -72,6 +72,7 @@ Send this **once when the SOS button is pressed**. Creates a new incident on the
 ```
 
 **Server behaviour:**
+
 - Looks up the device by `device_id`, validates the secret
 - If no open alert exists → creates `sos_alerts` row with `status = "new"`, auto-populates `fisherman_id`, `boat_id`, `bmu_id` from the device's boat assignment
 - If an open alert already exists → updates GPS position on existing row (idempotent)
@@ -113,6 +114,7 @@ Same fields as `/sos`. `level` is optional and can be omitted on regular pings.
 `alert_id` is `null` when no open SOS exists — the GPS ping is still stored in `gps_logs` and updates `last_seen_at`.
 
 **Server behaviour:**
+
 - Inserts `gps_logs` row (linked to open alert if one exists)
 - Updates `sos_alerts.last_lat/last_lng/last_ping_at` if open alert exists
 - Updates `devices.last_seen_at`
@@ -140,6 +142,7 @@ Only `device_id` is required. No GPS needed.
 ```
 
 **Server behaviour:**
+
 - Finds all open alerts for this device (`status` in `new`, `acknowledged`, `assigned`, `in_progress`)
 - Sets `status = "closed"` and stamps `resolved_at`
 - The rescue dashboard removes the alert from the active queue immediately
@@ -148,13 +151,13 @@ Only `device_id` is required. No GPS needed.
 
 ## Error Responses
 
-| HTTP Status | Body | Meaning | Firmware action |
-|-------------|------|---------|-----------------|
-| `401` | `{"error": "Missing x-device-secret"}` | Header not sent | Check firmware — header missing |
-| `401` | `{"error": "Invalid device credentials"}` | Wrong secret or device_id | Verify flashed values against BMU console |
-| `403` | `{"error": "Device disabled"}` | Disabled in BMU console | Stop retrying — contact BMU officer |
-| `400` | `{"error": "...zod message..."}` | Invalid payload | Fix field values (lat/lng range, etc.) |
-| `5xx` | any | Server error | Retry with exponential backoff |
+| HTTP Status | Body                                      | Meaning                   | Firmware action                           |
+| ----------- | ----------------------------------------- | ------------------------- | ----------------------------------------- |
+| `401`       | `{"error": "Missing x-device-secret"}`    | Header not sent           | Check firmware — header missing           |
+| `401`       | `{"error": "Invalid device credentials"}` | Wrong secret or device_id | Verify flashed values against BMU console |
+| `403`       | `{"error": "Device disabled"}`            | Disabled in BMU console   | Stop retrying — contact BMU officer       |
+| `400`       | `{"error": "...zod message..."}`          | Invalid payload           | Fix field values (lat/lng range, etc.)    |
+| `5xx`       | any                                       | Server error              | Retry with exponential backoff            |
 
 ---
 
@@ -180,90 +183,37 @@ If cellular signal is lost, queue the packet and retry when signal resumes. The 
 
 ---
 
-## ESP32 + SIM7600 Example (Arduino)
+## ESP32 + SIM800L Firmware
+
+A complete, production-ready firmware sketch is provided in [`firmware/rescue_watch/rescue_watch.ino`](./firmware/rescue_watch/rescue_watch.ino).
+
+Key points about the full firmware vs a basic stub:
+
+- Uses **SSD1306 OLED (128×64, I2C)** via Adafruit SSD1306 library — shows status, GPS coordinates, battery, and level on screen in real time
+- No buzzer — visual feedback only (OLED + LEDs)
+- Uses **TinyGPS++** to parse NMEA — checks `location.isValid()` and `location.age()` before sending coordinates
+- Uses **SIM800L AT commands** (`AT+HTTPINIT`, `AT+HTTPPARA`, `AT+HTTPDATA`, `AT+HTTPACTION`) — the correct HTTP stack for SIM800L
+- **Retry with exponential backoff** on all three endpoints (3 attempts: 2s, 4s, 6s)
+- **Real battery ADC** with voltage divider calculation — not hardcoded
+- **Non-blocking debounce** using `millis()` — no `delay()` inside button checks
+- **`gpsFeed()` called every loop iteration** — GPS parser must be continuously fed
+- **Location sent every 15s regardless** of SOS state — keeps `last_seen_at` fresh
+- Handles `403 Device disabled` — stops retrying instead of looping indefinitely
+
+**Required libraries** (install via Arduino Library Manager):
+
+- `TinyGPS++` by Mikal Hart
+- `ArduinoJson` by Benoit Blanchon
+- `Adafruit SSD1306` by Adafruit
+- `Adafruit GFX Library` by Adafruit
+
+**Change these three values before flashing:**
 
 ```cpp
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
-
-// Flash these two values per device — copy from BMU console
-const char* DEVICE_ID     = "DEV-ABC123";
-const char* DEVICE_SECRET = "a3f9c2...48hexchars...";
-const char* BASE_URL      = "https://your-domain.com";
-
-bool httpPost(const char* path, const char* body) {
-  HTTPClient http;
-  String url = String(BASE_URL) + path;
-  http.begin(url);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("x-device-secret", DEVICE_SECRET);
-
-  int code = http.POST(body);
-  http.end();
-
-  if (code == 200) return true;
-  if (code == 403) {
-    // Device disabled — stop retrying
-    Serial.println("Device disabled by BMU");
-    return false;
-  }
-  // Retry on 4xx/5xx handled by caller
-  return false;
-}
-
-void sendSOS(float lat, float lng, float accuracy, int battery) {
-  StaticJsonDocument<256> doc;
-  doc["device_id"] = DEVICE_ID;
-  doc["lat"]       = lat;
-  doc["lng"]       = lng;
-  doc["accuracy"]  = accuracy;
-  doc["battery"]   = battery;
-  doc["level"]     = "HIGH";
-  char body[256];
-  serializeJson(doc, body);
-  httpPost("/api/public/ingest/sos", body);
-}
-
-void sendLocation(float lat, float lng, int battery) {
-  StaticJsonDocument<200> doc;
-  doc["device_id"] = DEVICE_ID;
-  doc["lat"]       = lat;
-  doc["lng"]       = lng;
-  doc["battery"]   = battery;
-  char body[200];
-  serializeJson(doc, body);
-  httpPost("/api/public/ingest/location", body);
-}
-
-void cancelSOS() {
-  StaticJsonDocument<64> doc;
-  doc["device_id"] = DEVICE_ID;
-  char body[64];
-  serializeJson(doc, body);
-  httpPost("/api/public/ingest/cancel", body);
-}
-
-bool sosActive = false;
-
-void loop() {
-  float lat = getGPSLat();   // your GPS read function
-  float lng = getGPSLng();
-  float acc = getGPSAccuracy();
-  int   bat = getBatteryPct();
-
-  if (sosButtonPressed() && !sosActive) {
-    sosActive = true;
-    sendSOS(lat, lng, acc, bat);
-  }
-
-  if (cancelButtonPressed() && sosActive) {
-    sosActive = false;
-    cancelSOS();
-  }
-
-  sendLocation(lat, lng, bat);  // always ping every 15s
-  delay(15000);
-}
+const char* DEVICE_ID     = "DEV-ABC123";          // from BMU console
+const char* DEVICE_SECRET = "your_48_char_secret"; // from BMU console
+const char* HOST          = "your-domain.com";      // no https://
+// Also update the APN string in gsmOpenBearer() to match your SIM carrier
 ```
 
 ---

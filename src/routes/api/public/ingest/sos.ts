@@ -12,7 +12,7 @@ const Body = z.object({
   lng: z.number().min(-180).max(180),
   accuracy: z.number().nonnegative().optional(),
   battery: z.number().min(0).max(100).optional(),
-  level: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
+  level: z.enum(["LOW", "HIGH"]).optional(),
 });
 
 const cors = {
@@ -36,21 +36,32 @@ export const Route = createFileRoute("/api/public/ingest/sos")({
         try {
           const secret = request.headers.get("x-device-secret") ?? "";
           if (!secret) {
-            return Response.json({ error: "Missing x-device-secret" }, { status: 401, headers: cors });
+            return Response.json(
+              { error: "Missing x-device-secret" },
+              { status: 401, headers: cors },
+            );
           }
           const body = Body.parse(await request.json());
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
           const { data: device, error: dErr } = await supabaseAdmin
             .from("devices")
-            .select("id, boat_id, active, device_secret, boats:boat_id(id, owner_fisherman_id, bmu_id)")
+            .select(
+              "id, boat_id, active, device_secret, boats:boat_id(id, owner_fisherman_id, bmu_id)",
+            )
             .eq("device_id", body.device_id)
             .maybeSingle();
           if (dErr) throw dErr;
-          if (!device || !timingSafeEq(secret, (device as any).device_secret ?? "")) {
-            return Response.json({ error: "Invalid device credentials" }, { status: 401, headers: cors });
+          if (
+            !device ||
+            !timingSafeEq(secret, (device as { device_secret: string }).device_secret ?? "")
+          ) {
+            return Response.json(
+              { error: "Invalid device credentials" },
+              { status: 401, headers: cors },
+            );
           }
-          if (!(device as any).active) {
+          if (!(device as { active: boolean }).active) {
             return Response.json({ error: "Device disabled" }, { status: 403, headers: cors });
           }
 
@@ -62,7 +73,16 @@ export const Route = createFileRoute("/api/public/ingest/sos")({
             .maybeSingle();
 
           let alertId = existing?.id as string | undefined;
-          const boat = (device as any).boats ?? null;
+          const boat =
+            (
+              device as {
+                boats: {
+                  id: string;
+                  owner_fisherman_id: string | null;
+                  bmu_id: string | null;
+                } | null;
+              }
+            ).boats ?? null;
           const nowIso = new Date().toISOString();
 
           if (!alertId) {
@@ -108,10 +128,7 @@ export const Route = createFileRoute("/api/public/ingest/sos")({
             battery: body.battery ?? null,
           });
 
-          await supabaseAdmin
-            .from("devices")
-            .update({ last_seen_at: nowIso })
-            .eq("id", device.id);
+          await supabaseAdmin.from("devices").update({ last_seen_at: nowIso }).eq("id", device.id);
 
           return Response.json({ alert_id: alertId, received_at: nowIso }, { headers: cors });
         } catch (e) {

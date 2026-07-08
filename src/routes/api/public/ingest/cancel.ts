@@ -26,7 +26,10 @@ export const Route = createFileRoute("/api/public/ingest/cancel")({
         try {
           const secret = request.headers.get("x-device-secret") ?? "";
           if (!secret) {
-            return Response.json({ error: "Missing x-device-secret" }, { status: 401, headers: cors });
+            return Response.json(
+              { error: "Missing x-device-secret" },
+              { status: 401, headers: cors },
+            );
           }
           const body = Body.parse(await request.json());
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -36,8 +39,14 @@ export const Route = createFileRoute("/api/public/ingest/cancel")({
             .select("id, device_secret")
             .eq("device_id", body.device_id)
             .maybeSingle();
-          if (!device || !timingSafeEq(secret, (device as any).device_secret ?? "")) {
-            return Response.json({ error: "Invalid device credentials" }, { status: 401, headers: cors });
+          if (
+            !device ||
+            !timingSafeEq(secret, (device as { device_secret: string }).device_secret ?? "")
+          ) {
+            return Response.json(
+              { error: "Invalid device credentials" },
+              { status: 401, headers: cors },
+            );
           }
 
           await supabaseAdmin
