@@ -17,15 +17,8 @@ import {
 } from "@/lib/marine-types";
 import { supabase } from "@/integrations/supabase/client";
 import { requireRole, type RouteContext } from "@/lib/route-guard";
-// Asset loaded at runtime to avoid build errors if the file is missing
-const ALARM_URL = (() => {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return (require("@/assets/sos-alarm.mp3.asset.json") as { url: string }).url;
-  } catch {
-    return "https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3";
-  }
-})();
+import alarmUrl from "@/assets/mixkit-retro-game-emergency-alarm-1000.wav?url";
+const ALARM_URL = alarmUrl;
 import {
   Anchor,
   BellOff,
@@ -224,19 +217,43 @@ function RescueDashboard() {
   );
   const alarmActive = unacknowledgedNew.length > 0 && !muted;
 
-  // Alarm playback
+  // Try to unlock audio on first load (works if user has interacted with the page before)
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
-    if (alarmActive && audioReady) {
+    el.muted = true;
+    el.play()
+      .then(() => {
+        el.pause();
+        el.currentTime = 0;
+        el.muted = false;
+        setAudioReady(true); // browser allowed it — alarm will auto-play
+      })
+      .catch(() => {
+        el.muted = false;
+        // Browser blocked autoplay — officer must click "Enable alerts" first
+        setAudioReady(false);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Alarm playback — fires whenever alarmActive or audioReady changes
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (alarmActive) {
       el.loop = true;
       el.volume = 1;
-      el.play().catch(() => setAudioReady(false));
+      el.muted = false;
+      el.play().catch(() => {
+        // Auto-play blocked — mark as not ready so the button shows
+        setAudioReady(false);
+      });
     } else {
       el.pause();
       el.currentTime = 0;
     }
-  }, [alarmActive, audioReady]);
+  }, [alarmActive]);
 
   async function enableAudio() {
     const el = audioRef.current;
@@ -247,6 +264,12 @@ function RescueDashboard() {
       el.pause();
       el.currentTime = 0;
       setAudioReady(true);
+      // If alarm should be active right now, start it immediately
+      if (alarmActive) {
+        el.loop = true;
+        el.volume = 1;
+        el.play().catch(() => {});
+      }
     } catch {
       setAudioReady(false);
     }
