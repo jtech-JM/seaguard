@@ -10,7 +10,7 @@ export const Route = createFileRoute("/")({
     }
     // Already signed in — send straight to their dashboard
     const role = await fetchPrimaryRole(data.session.user.id);
-    throw redirect({ to: (role ? ROLE_HOME[role] : "/auth") as "/rescue" });
+    throw redirect({ to: (role ? ROLE_HOME[role] : "/auth") as any });
   },
   // beforeLoad always redirects so this component never actually renders
   component: () => null,

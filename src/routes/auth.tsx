@@ -8,7 +8,7 @@ async function goHome(navigate: ReturnType<typeof useNavigate>) {
   const { data } = await supabase.auth.getUser();
   if (!data.user) return;
   const role = await fetchPrimaryRole(data.user.id);
-  navigate({ to: (role ? ROLE_HOME[role] : "/fisherman") as "/rescue" });
+  navigate({ to: (role ? ROLE_HOME[role] : "/fisherman") as any });
 }
 
 export const Route = createFileRoute("/auth")({

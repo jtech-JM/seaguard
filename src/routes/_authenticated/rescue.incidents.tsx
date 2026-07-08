@@ -103,7 +103,7 @@ function IncidentsPage() {
   }
 
   function openOnMap(id: string) {
-    navigate({ to: "/rescue", search: { selected: id } });
+    navigate({ to: "/rescue" as any, search: { selected: id } as any });
   }
 
   return (
@@ -112,7 +112,7 @@ function IncidentsPage() {
       <header className="flex items-center justify-between border-b border-foam/10 px-6 py-4">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate({ to: "/rescue" })}
+            onClick={() => navigate({ to: "/rescue" as any })}
             className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 text-xs hover:bg-foam/10"
             aria-label="Back to map"
           >

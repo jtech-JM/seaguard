@@ -20,6 +20,7 @@ export function requireRole(context: RouteContext, allowed: AppRole[]) {
 
   // Wrong role — send them to their own dashboard
   if (!allowed.includes(role)) {
-    throw redirect({ to: ROLE_HOME[role] as "/rescue" });
+    const dest = ROLE_HOME[role] as "/rescue";
+    throw redirect({ to: dest as any, search: {} as never });
   }
 }

@@ -684,7 +684,7 @@ function RescueDashboard() {
         {/* Bottom-left pill: Incidents button */}
         <div className="absolute bottom-6 left-6 z-[500]">
           <button
-            onClick={() => navigate({ to: "/rescue/incidents" })}
+            onClick={() => navigate({ to: "/rescue/incidents" as any })}
             className="inline-flex items-center gap-2 rounded-full border border-foam/20 bg-ocean/90 px-4 py-2.5 text-sm font-semibold text-foam shadow-lg backdrop-blur-md hover:bg-foam/10 transition"
           >
             <ClipboardList className="h-4 w-4 text-tide" />

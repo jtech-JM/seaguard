@@ -144,7 +144,7 @@ function FishermanPortal() {
     setBoat((bts?.[0] as BoatRow) ?? null);
     setDevice((dvs?.[0] as DeviceRow) ?? null);
     setTrips((trs as Trip[]) ?? []);
-    setActiveAlert(alts?.[0] ?? null);
+    setActiveAlert((alts?.[0] as unknown as SOSAlertRow) ?? null);
     setAllFishermen((allFm as FishermanFull[]) ?? []);
   }
 
