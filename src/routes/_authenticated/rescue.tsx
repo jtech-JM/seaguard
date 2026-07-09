@@ -25,7 +25,6 @@ import {
   BellRing,
   CheckCircle2,
   ClipboardList,
-  LogOut,
   Navigation,
   Radio,
   Ship,
@@ -287,11 +286,6 @@ function RescueDashboard() {
     [alerts, selectedId],
   );
 
-  async function signOut() {
-    await supabase.auth.signOut();
-    navigate({ to: "/auth" });
-  }
-
   async function acknowledgeAll() {
     const ids = unacknowledgedNew.map((a) => a.id);
     if (ids.length === 0) return;
@@ -358,7 +352,7 @@ function RescueDashboard() {
         existing.setIcon(icon);
       } else {
         const marker = L.marker(pos, { icon }).addTo(map);
-        marker.on("click", () => setSelectedId(a.id));
+        marker.on("click", () => setSelectedId((prev) => (prev === a.id ? null : a.id)));
         markersRef.current.set(a.id, marker);
       }
     }
@@ -649,12 +643,6 @@ function RescueDashboard() {
           >
             {muted ? <BellOff className="h-3.5 w-3.5" /> : <BellRing className="h-3.5 w-3.5" />}
             {muted ? "Muted" : "Alarm on"}
-          </button>
-          <button
-            onClick={signOut}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 hover:bg-foam/10"
-          >
-            <LogOut className="h-3.5 w-3.5" /> Sign out
           </button>
         </div>
       </header>
