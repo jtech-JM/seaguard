@@ -248,6 +248,7 @@ function FishermanPortal() {
       if (activeTrip) {
         await supabase.from("sea_trips").update({ status: "at_sea" }).eq("id", activeTrip.id);
       }
+      setActiveAlert(null);
       await load();
     } catch (e) {
       alert(String(e));
