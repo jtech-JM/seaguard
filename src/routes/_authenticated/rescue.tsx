@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, useMatches, Outlet } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Outlet, useLocation } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Map as LMap, Marker as LMarker } from "leaflet";
 import {
@@ -67,11 +67,10 @@ function fmtDuration(ms: number) {
 }
 
 function RescueRouteComponent() {
-  const matches = useMatches();
-  const hasChild = matches.some(
-    (m) => m.id.startsWith("/_authenticated/rescue/") && m.id !== "/_authenticated/rescue",
-  );
-  if (hasChild) return <Outlet />;
+  const location = useLocation();
+  if (location.pathname !== "/rescue") {
+    return <Outlet />;
+  }
   return <RescueDashboard />;
 }
 
