@@ -55,6 +55,22 @@ export const Route = createFileRoute("/api/public/ingest/cancel")({
             .eq("device_id", device.id)
             .in("status", ["new", "acknowledged", "assigned", "in_progress"]);
 
+          const { data: alert } = await supabaseAdmin
+            .from("sos_alerts")
+            .select("boat_id")
+            .eq("device_id", device.id)
+            .order("started_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (alert?.boat_id) {
+            await supabaseAdmin
+              .from("sea_trips")
+              .update({ status: "at_sea" })
+              .eq("boat_id", alert.boat_id)
+              .in("status", ["sos", "rescue_in_progress"]);
+          }
+
           return Response.json({ ok: true }, { headers: cors });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
