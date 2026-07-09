@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useMatches, Outlet } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Map as LMap, Marker as LMarker } from "leaflet";
 import {
@@ -38,7 +38,6 @@ import {
 export const Route = createFileRoute("/_authenticated/rescue")({
   ssr: false,
   beforeLoad: ({ context }) => requireRole(context as RouteContext, ["rescue_officer"]),
-  validateSearch: (s: Record<string, unknown>) => ({ selected: s.selected as string | undefined }),
   head: () => ({
     meta: [
       { title: "Rescue Operations Center — MarineRescue" },
@@ -48,7 +47,7 @@ export const Route = createFileRoute("/_authenticated/rescue")({
       },
     ],
   }),
-  component: RescueDashboard,
+  component: RescueRouteComponent,
 });
 
 interface AlertJoined extends SOSAlertRow {
@@ -65,6 +64,15 @@ function fmtDuration(ms: number) {
   if (h > 0) return `${h}h ${m % 60}m`;
   if (m > 0) return `${m}m ${s % 60}s`;
   return `${s}s`;
+}
+
+function RescueRouteComponent() {
+  const matches = useMatches();
+  const hasChild = matches.some(
+    (m) => m.id.startsWith("/_authenticated/rescue/") && m.id !== "/_authenticated/rescue",
+  );
+  if (hasChild) return <Outlet />;
+  return <RescueDashboard />;
 }
 
 function RescueDashboard() {
@@ -234,7 +242,6 @@ function RescueDashboard() {
         // Browser blocked autoplay — officer must click "Enable alerts" first
         setAudioReady(false);
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Alarm playback — fires whenever alarmActive or audioReady changes
