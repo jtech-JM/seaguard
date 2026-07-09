@@ -315,7 +315,7 @@ function RescueDashboard() {
       [-4.0435, 39.6682],
       7,
     );
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
     }).addTo(map);
     mapRef.current = map;
@@ -462,13 +462,13 @@ function RescueDashboard() {
     const existing = trailsRef.current.get(selectedId);
     if (existing) {
       existing.setLatLngs(pts);
-      existing.setStyle({ opacity: detailShowTrail ? 0.7 : 0 });
+      existing.setStyle({ opacity: detailShowTrail ? 0.8 : 0 });
     } else if (pts.length > 1) {
       const line = L.polyline(pts, {
-        color: "#4dd9c0",
-        weight: 2,
-        opacity: detailShowTrail ? 0.7 : 0,
-        dashArray: "4 4",
+        color: "#0891b2",
+        weight: 3,
+        opacity: detailShowTrail ? 0.8 : 0,
+        dashArray: "6 4",
       }).addTo(map);
       trailsRef.current.set(selectedId, line);
     }
@@ -570,8 +570,8 @@ function RescueDashboard() {
       <style>{`
         @keyframes sos-pulse {0%{transform:scale(0.6);opacity:1}100%{transform:scale(2.2);opacity:0}}
         @keyframes flash {0%,100%{opacity:1}50%{opacity:.55}}
-        .leaflet-container{background:#0a1929;font-family:inherit}
-        .leaflet-control-zoom a{background:rgba(15,40,60,0.9)!important;color:#eaf4f4!important;border-color:rgba(255,255,255,0.08)!important}
+        .leaflet-container{background:#e5e5e5;font-family:inherit}
+        .leaflet-control-zoom a{background:rgba(255,255,255,0.95)!important;color:#1a1a1a!important;border-color:rgba(0,0,0,0.08)!important}
       `}</style>
 
       {/* Full-screen emergency banner */}
@@ -702,7 +702,7 @@ function RescueDashboard() {
       {/* Body: full-screen map */}
       <div className="relative flex-1">
         {/* Map fills 100% */}
-        <div ref={mapElRef} className="absolute inset-0 bg-[#0a1929]" />
+        <div ref={mapElRef} className="absolute inset-0 bg-[#e5e5e5]" />
 
         {/* Bottom-left pill: Incidents button */}
         <div className="absolute bottom-6 left-6 z-[500]">
@@ -769,25 +769,25 @@ function buildMarkerIcon(
   isSelected: boolean,
 ) {
   if (!isActive) {
-    // Small grey resolved dot
+    // Small grey resolved dot with white outline for contrast on light/dark maps
     const size = isSelected ? 10 : 8;
     return L.divIcon({
       className: "",
-      html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:#6b8ca0;border:1px solid rgba(255,255,255,0.2);box-shadow:0 0 4px rgba(0,0,0,0.4)"></div>`,
+      html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:#6b8ca0;border:2px solid rgba(255,255,255,0.9);box-shadow:0 0 4px rgba(0,0,0,0.3)"></div>`,
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2],
     });
   }
 
   // Determine pulsing colors based on alert status
-  let pulseColor = "rgba(225,53,69,0.4)"; // default red
+  let pulseColor = "rgba(225,53,69,0.5)"; // default red
   let dotColor = "#e13545"; // default red
 
   if (_a.status === "acknowledged" || _a.status === "assigned") {
-    pulseColor = "rgba(245,158,11,0.4)"; // orange/amber
+    pulseColor = "rgba(245,158,11,0.5)"; // orange/amber
     dotColor = "#f59e0b"; // orange/amber
   } else if (_a.status === "in_progress") {
-    pulseColor = "rgba(20,184,166,0.4)"; // cyan/teal
+    pulseColor = "rgba(20,184,166,0.5)"; // cyan/teal
     dotColor = "#14b8a6"; // cyan/teal
   }
 
@@ -795,7 +795,7 @@ function buildMarkerIcon(
   const html = `<div style="position:relative;cursor:pointer;width:${dotSize}px;height:${dotSize}px">
     <div style="position:absolute;inset:0;border-radius:9999px;background:${pulseColor};animation:sos-pulse 1.2s ease-out infinite"></div>
     <div style="position:absolute;inset:0;border-radius:9999px;background:${pulseColor};animation:sos-pulse 1.2s ease-out infinite;animation-delay:.6s"></div>
-    <div style="position:absolute;inset:${Math.round(dotSize * 0.28)}px;border-radius:9999px;background:${dotColor}${isSelected ? ";box-shadow:0 0 0 3px rgba(255,255,255,0.95)" : ""}"></div>
+    <div style="position:absolute;inset:${Math.round(dotSize * 0.28)}px;border-radius:9999px;background:${dotColor};border:2px solid rgba(255,255,255,0.95);box-shadow:${isSelected ? "0 0 0 3px rgba(255,255,255,0.95)" : "0 0 6px rgba(0,0,0,0.4)"}"></div>
   </div>`;
 
   return L.divIcon({
