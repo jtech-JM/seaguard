@@ -659,6 +659,16 @@ function RescueDashboard() {
         .from("sos_alerts")
         .update({ status: "resolved", resolved_at: new Date().toISOString() })
         .eq("id", selectedId);
+
+      const a = filteredAlerts.find((al) => al.id === selectedId);
+      if (a?.boat_id) {
+        await supabase
+          .from("sea_trips")
+          .update({ status: "at_sea" })
+          .eq("boat_id", a.boat_id)
+          .in("status", ["sos", "rescue_in_progress"]);
+      }
+
       refresh();
     } finally {
       setDetailOpBusy(false);
@@ -675,6 +685,15 @@ function RescueDashboard() {
     if ((next === "resolved" || next === "closed") && !a.resolved_at)
       patch.resolved_at = new Date().toISOString();
     await supabase.from("sos_alerts").update(patch).eq("id", selectedId);
+
+    if ((next === "resolved" || next === "closed") && a.boat_id) {
+      await supabase
+        .from("sea_trips")
+        .update({ status: "at_sea" })
+        .eq("boat_id", a.boat_id)
+        .in("status", ["sos", "rescue_in_progress"]);
+    }
+
     refresh();
   }
 
