@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Outlet, useLocation } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { Map as LMap, Marker as LMarker } from "leaflet";
 import {
   ALERT_STATUSES,
@@ -25,8 +25,11 @@ import {
   BellRing,
   CheckCircle2,
   ClipboardList,
+  MapPin,
   Navigation,
   Radio,
+  RouteIcon,
+  Satellite,
   Ship,
   Siren,
   Volume2,
@@ -90,6 +93,9 @@ function RescueDashboard() {
     devicesOnline: 0,
     activeRescues: 0,
   });
+  const [satelliteView, setSatelliteView] = useState(false);
+  const [drawMode, setDrawMode] = useState(false);
+  const [routePoints, setRoutePoints] = useState<{ lat: number; lng: number }[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const seenIdsRef = useRef<Set<string>>(new Set());
 
@@ -99,6 +105,9 @@ function RescueDashboard() {
   const LRef = useRef<typeof import("leaflet") | null>(null);
   const markersRef = useRef<Map<string, LMarker>>(new Map());
   const trailsRef = useRef<Map<string, import("leaflet").Polyline>>(new Map());
+  const tileLayerRef = useRef<import("leaflet").TileLayer | null>(null);
+  const routeLineRef = useRef<import("leaflet").Polyline | null>(null);
+  const routeMarkersRef = useRef<import("leaflet").Marker[]>([]);
 
   // Per-alert GPS data for the detail panel
   const [detailLatest, setDetailLatest] = useState<GpsLog | null>(null);
@@ -296,6 +305,74 @@ function RescueDashboard() {
     refresh();
   }
 
+  function toggleSatelliteView() {
+    const L = LRef.current;
+    const map = mapRef.current;
+    if (!L || !map) return;
+    const next = !satelliteView;
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+    }
+    const url = next
+      ? "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+      : "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+    tileLayerRef.current = L.tileLayer(url, { maxZoom: 19 }).addTo(map);
+    setSatelliteView(next);
+  }
+
+  function toggleDrawMode() {
+    setDrawMode((prev) => !prev);
+    if (drawMode) {
+      clearRoute();
+    }
+  }
+
+  const handleMapClickForRoute = useCallback(
+    (e: { latlng: { lat: number; lng: number } }) => {
+      if (!drawMode) return;
+      const L = LRef.current;
+      const map = mapRef.current;
+      if (!L || !map) return;
+      const pt = e.latlng;
+      const marker = L.marker([pt.lat, pt.lng], {
+        icon: L.divIcon({
+          className: "",
+          html: `<div style="width:10px;height:10px;border-radius:50%;background:#0891b2;border:2px solid white;box-shadow:0 0 4px rgba(0,0,0,0.4)"></div>`,
+          iconSize: [10, 10],
+          iconAnchor: [5, 5],
+        }),
+      }).addTo(map);
+      routeMarkersRef.current = [...routeMarkersRef.current, marker];
+      setRoutePoints((prev) => [...prev, { lat: pt.lat, lng: pt.lng }]);
+    },
+    [drawMode],
+  );
+
+  function clearRoute() {
+    routeMarkersRef.current.forEach((m) => m.remove());
+    routeMarkersRef.current = [];
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+      routeLineRef.current = null;
+    }
+    setRoutePoints([]);
+  }
+
+  function finishRoute() {
+    setDrawMode(false);
+  }
+
+  function zoomToLocation() {
+    const map = mapRef.current;
+    const a = selected;
+    if (!map || !a) return;
+    const lat = detailLatest?.lat ?? a.last_lat;
+    const lng = detailLatest?.lng ?? a.last_lng;
+    if (lat != null && lng != null) {
+      map.flyTo([lat, lng], 15, { animate: true, duration: 0.8 });
+    }
+  }
+
   // ── Leaflet: load library once ───────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -315,7 +392,7 @@ function RescueDashboard() {
       [-4.0435, 39.6682],
       7,
     );
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    tileLayerRef.current = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
     }).addTo(map);
     mapRef.current = map;
@@ -473,6 +550,60 @@ function RescueDashboard() {
       trailsRef.current.set(selectedId, line);
     }
   }, [selectedId, detailTrail, detailShowTrail]);
+
+  // ── Map click handler for route drawing ──────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (drawMode) {
+      map.on("click", handleMapClickForRoute);
+      map.getContainer().style.cursor = "crosshair";
+    } else {
+      map.off("click", handleMapClickForRoute);
+      map.getContainer().style.cursor = "";
+    }
+    return () => {
+      map.off("click", handleMapClickForRoute);
+      map.getContainer().style.cursor = "";
+    };
+  }, [drawMode, handleMapClickForRoute]);
+
+  // ── Rescue route polyline ─────────────────────────────────────────────────
+  useEffect(() => {
+    const L = LRef.current;
+    const map = mapRef.current;
+    if (!L || !map) return;
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+      routeLineRef.current = null;
+    }
+    if (routePoints.length > 1) {
+      const latlngs: [number, number][] = routePoints.map((p) => [p.lat, p.lng]);
+      routeLineRef.current = L.polyline(latlngs, {
+        color: "#f59e0b",
+        weight: 4,
+        opacity: 0.9,
+        dashArray: "8 6",
+      }).addTo(map);
+    }
+  }, [routePoints]);
+
+  // ── Cleanup route on unmount ──────────────────────────────────────────────
+  useEffect(
+    () => () => {
+      routeMarkersRef.current.forEach((m) => m.remove());
+      routeMarkersRef.current = [];
+      if (routeLineRef.current) {
+        routeLineRef.current.remove();
+        routeLineRef.current = null;
+      }
+      if (tileLayerRef.current && mapRef.current) {
+        mapRef.current.removeLayer(tileLayerRef.current);
+        tileLayerRef.current = null;
+      }
+    },
+    [],
+  );
 
   // ── Follow live GPS for selected alert ──────────────────────────────────
   useEffect(() => {
@@ -714,6 +845,50 @@ function RescueDashboard() {
           </button>
         </div>
 
+        {/* Top-right map controls */}
+        <div className="absolute top-4 right-4 z-[500] flex flex-col gap-2">
+          <button
+            onClick={toggleSatelliteView}
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold shadow-lg backdrop-blur-md transition ${
+              satelliteView
+                ? "border-tide/40 bg-tide/20 text-tide"
+                : "border-foam/20 bg-ocean/90 text-foam hover:bg-foam/10"
+            }`}
+          >
+            <Satellite className="h-4 w-4" />
+            {satelliteView ? "Standard" : "Satellite"}
+          </button>
+          <button
+            onClick={toggleDrawMode}
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold shadow-lg backdrop-blur-md transition ${
+              drawMode
+                ? "border-distress/40 bg-distress/20 text-distress"
+                : "border-foam/20 bg-ocean/90 text-foam hover:bg-foam/10"
+            }`}
+          >
+            <RouteIcon className="h-4 w-4" />
+            {drawMode ? "Finish Route" : "Draw Route"}
+          </button>
+          {drawMode && (
+            <button
+              onClick={clearRoute}
+              className="inline-flex items-center gap-2 rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-xs font-semibold text-yellow-300 shadow-lg backdrop-blur-md hover:bg-yellow-500/20 transition"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {/* Draw mode indicator */}
+        {drawMode && (
+          <div className="absolute top-4 left-1/2 z-[500] -translate-x-1/2">
+            <div className="rounded-full border border-distress/40 bg-distress/15 px-4 py-2 text-xs font-semibold text-distress shadow-lg backdrop-blur-md animate-pulse">
+              Click map to add waypoints · {routePoints.length} point
+              {routePoints.length !== 1 ? "s" : ""}
+            </div>
+          </div>
+        )}
+
         {/* Right-side detail panel */}
         <div
           className={`fixed right-0 z-[400] flex flex-col border-l border-foam/10 bg-ocean/95 backdrop-blur-md transition-transform duration-300 ease-in-out
@@ -747,6 +922,7 @@ function RescueDashboard() {
               onCreateRescueOp={createRescueOp}
               onCloseRescueOp={closeRescueOp}
               onSetStatus={setStatus}
+              onZoomToLocation={zoomToLocation}
             />
           )}
         </div>
@@ -822,6 +998,7 @@ interface DetailPanelProps {
   onCreateRescueOp: () => void;
   onCloseRescueOp: (id: string) => void;
   onSetStatus: (s: AlertStatus) => void;
+  onZoomToLocation: () => void;
 }
 
 function DetailPanel({
@@ -845,6 +1022,7 @@ function DetailPanel({
   onCreateRescueOp,
   onCloseRescueOp,
   onSetStatus,
+  onZoomToLocation,
 }: DetailPanelProps) {
   const isActive = selectedIsActive;
 
@@ -930,6 +1108,14 @@ function DetailPanel({
           />
           <Stat label="GPS age" value={gpsAgeS != null ? `${gpsAgeS}s` : "—"} />
         </div>
+
+        <button
+          onClick={onZoomToLocation}
+          className="inline-flex items-center gap-2 rounded-lg border border-tide/30 bg-tide/5 px-3 py-2 text-xs font-semibold text-tide hover:bg-tide/10 transition"
+        >
+          <MapPin className="h-3.5 w-3.5" />
+          Zoom to location
+        </button>
 
         {detailTrail.length > 0 && (
           <div className="flex items-center gap-2 text-[11px] text-foam/50 flex-wrap">
