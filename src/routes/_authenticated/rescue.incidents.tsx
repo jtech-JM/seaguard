@@ -14,6 +14,8 @@ import {
 } from "@/lib/marine-types";
 import { supabase } from "@/integrations/supabase/client";
 import { requireRole, type RouteContext } from "@/lib/route-guard";
+import { canTransitionAlertStatus } from "@/lib/alert-status";
+import { assignRescueOperation, updateAlertStatus } from "@/lib/rescue-ops";
 import {
   Anchor,
   ArrowLeft,
@@ -145,12 +147,17 @@ function IncidentsPage() {
 
   async function acknowledge(a: AlertJoined) {
     if (busyIds.has(a.id)) return;
+    if (!canTransitionAlertStatus(a.status, "acknowledged")) return;
     setBusyIds((prev) => new Set(prev).add(a.id));
     try {
-      await supabase
-        .from("sos_alerts")
-        .update({ status: "acknowledged", acknowledged_at: new Date().toISOString() })
-        .eq("id", a.id);
+      const { error } = await updateAlertStatus({
+        alertId: a.id,
+        nextStatus: "acknowledged",
+        notes: "Acknowledged from incidents list",
+      });
+      if (error) {
+        window.alert(error.message);
+      }
       await refresh();
     } finally {
       setBusyIds((prev) => {
@@ -163,16 +170,19 @@ function IncidentsPage() {
 
   async function assign(a: AlertJoined) {
     if (busyIds.has(a.id)) return;
+    if (!canTransitionAlertStatus(a.status, "assigned")) return;
     const team = prompt("Team name (e.g. Coastguard Alpha):");
     if (!team) return;
     setBusyIds((prev) => new Set(prev).add(a.id));
     try {
-      await supabase.from("rescue_operations").insert({
-        alert_id: a.id,
-        team_name: team,
-        status: "assigned",
+      const { error } = await assignRescueOperation({
+        alertId: a.id,
+        teamName: team,
+        notes: "Assigned from incidents list",
       });
-      await supabase.from("sos_alerts").update({ status: "assigned" }).eq("id", a.id);
+      if (error) {
+        window.alert(error.message);
+      }
       await refresh();
     } finally {
       setBusyIds((prev) => {

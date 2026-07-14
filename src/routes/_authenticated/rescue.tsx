@@ -16,7 +16,9 @@ import {
   EMERGENCY_LEVEL_COLOR,
 } from "@/lib/marine-types";
 import { supabase } from "@/integrations/supabase/client";
+import { canTransitionAlertStatus } from "@/lib/alert-status";
 import { requireRole, type RouteContext } from "@/lib/route-guard";
+import { assignRescueOperation, closeRescueOperation, updateAlertStatus } from "@/lib/rescue-ops";
 import alarmUrl from "@/assets/mixkit-retro-game-emergency-alarm-1000.wav?url";
 const ALARM_URL = alarmUrl;
 import {
@@ -298,10 +300,19 @@ function RescueDashboard() {
   async function acknowledgeAll() {
     const ids = unacknowledgedNew.map((a) => a.id);
     if (ids.length === 0) return;
-    await supabase
-      .from("sos_alerts")
-      .update({ status: "acknowledged", acknowledged_at: new Date().toISOString() })
-      .in("id", ids);
+    const results = await Promise.all(
+      ids.map((id) =>
+        updateAlertStatus({
+          alertId: id,
+          nextStatus: "acknowledged",
+          notes: "Acknowledged from rescue dashboard",
+        }),
+      ),
+    );
+    const failed = results.find((result) => result.error);
+    if (failed?.error) {
+      window.alert(failed.error.message);
+    }
     refresh();
   }
 
@@ -628,15 +639,18 @@ function RescueDashboard() {
   // ── Rescue operation helpers ─────────────────────────────────────────────
   async function createRescueOp() {
     if (!selectedId) return;
+    const alert = filteredAlerts.find((item) => item.id === selectedId);
+    if (!alert || !canTransitionAlertStatus(alert.status, "assigned")) return;
     setDetailOpBusy(true);
     try {
-      await supabase.from("rescue_operations").insert({
-        alert_id: selectedId,
-        team_name: detailOpTeam || null,
+      const { error } = await assignRescueOperation({
+        alertId: selectedId,
+        teamName: detailOpTeam || null,
         notes: detailOpNotes || null,
-        status: "assigned",
       });
-      await supabase.from("sos_alerts").update({ status: "assigned" }).eq("id", selectedId);
+      if (error) {
+        window.alert(error.message);
+      }
       refresh();
     } finally {
       setDetailOpBusy(false);
@@ -645,30 +659,18 @@ function RescueDashboard() {
 
   async function closeRescueOp(opId: string) {
     if (!selectedId) return;
+    const alert = filteredAlerts.find((item) => item.id === selectedId);
+    if (!alert || !canTransitionAlertStatus(alert.status, "resolved")) return;
     setDetailOpBusy(true);
     try {
-      await supabase
-        .from("rescue_operations")
-        .update({
-          ended_at: new Date().toISOString(),
-          status: "resolved",
-          notes: detailOpNotes || null,
-        })
-        .eq("id", opId);
-      await supabase
-        .from("sos_alerts")
-        .update({ status: "resolved", resolved_at: new Date().toISOString() })
-        .eq("id", selectedId);
-
-      const a = filteredAlerts.find((al) => al.id === selectedId);
-      if (a?.boat_id) {
-        await supabase
-          .from("sea_trips")
-          .update({ status: "at_sea" })
-          .eq("boat_id", a.boat_id)
-          .in("status", ["sos", "rescue_in_progress"]);
+      const { error } = await closeRescueOperation({
+        alertId: selectedId,
+        opId,
+        notes: detailOpNotes || null,
+      });
+      if (error) {
+        window.alert(error.message);
       }
-
       refresh();
     } finally {
       setDetailOpBusy(false);
@@ -678,20 +680,14 @@ function RescueDashboard() {
   async function setStatus(next: AlertStatus) {
     if (!selectedId) return;
     const a = filteredAlerts.find((al) => al.id === selectedId);
-    if (!a) return;
-    const patch: Partial<SOSAlertRow> = { status: next };
-    if (next === "acknowledged" && !a.acknowledged_at)
-      patch.acknowledged_at = new Date().toISOString();
-    if ((next === "resolved" || next === "closed") && !a.resolved_at)
-      patch.resolved_at = new Date().toISOString();
-    await supabase.from("sos_alerts").update(patch).eq("id", selectedId);
-
-    if ((next === "resolved" || next === "closed") && a.boat_id) {
-      await supabase
-        .from("sea_trips")
-        .update({ status: "at_sea" })
-        .eq("boat_id", a.boat_id)
-        .in("status", ["sos", "rescue_in_progress"]);
+    if (!a || !canTransitionAlertStatus(a.status, next)) return;
+    const { error } = await updateAlertStatus({
+      alertId: selectedId,
+      nextStatus: next,
+      notes: detailOpNotes || null,
+    });
+    if (error) {
+      alert(error.message);
     }
 
     refresh();

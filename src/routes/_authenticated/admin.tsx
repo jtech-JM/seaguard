@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { LogOut, Shield, UserCog, Link2, X } from "lucide-react";
 import type { AppRole } from "@/lib/use-role";
-import { STAFF_ROLES } from "@/lib/use-role";
 import { requireRole, type RouteContext } from "@/lib/route-guard";
+import { linkProfileToFisherman, setUserRole } from "@/lib/admin-ops";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   ssr: false,
@@ -91,11 +91,7 @@ function AdminDashboard() {
   }, []);
 
   async function toggleRole(userId: string, role: AppRole, has: boolean) {
-    if (has) {
-      await supabase.from("user_roles").delete().eq("user_id", userId).eq("role", role);
-    } else {
-      await supabase.from("user_roles").insert({ user_id: userId, role });
-    }
+    await setUserRole(userId, role, !has);
     load();
   }
 
@@ -231,18 +227,7 @@ function LinkFishermanModal({
   async function save() {
     setBusy(true);
     try {
-      // Unlink any profile that currently holds this fisherman_id (avoid duplicates)
-      if (selected) {
-        await supabase
-          .from("profiles")
-          .update({ fisherman_id: null })
-          .eq("fisherman_id", selected)
-          .neq("id", user.id);
-      }
-      await supabase
-        .from("profiles")
-        .update({ fisherman_id: selected || null })
-        .eq("id", user.id);
+      await linkProfileToFisherman(user.id, selected || null);
       onSaved();
     } finally {
       setBusy(false);

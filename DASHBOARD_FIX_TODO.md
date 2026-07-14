@@ -3,7 +3,7 @@
 ## Priority 0: Database Access Control
 
 - [ ] Replace broad `USING (true)` / `WITH CHECK (true)` RLS policies on operational tables.
-- [ ] Add role-aware RLS for `sos_alerts`, `gps_logs`, `rescue_operations`, `sea_trips`, `trip_crew`, `boats`, `devices`, `fishermen`, `bmus`, and `profiles`.
+- [x] Add role-aware RLS for `sos_alerts`, `rescue_operations`, `sea_trips`, `trip_crew`, `devices`, `fishermen`, `boats`, `profiles`, `gps_logs`, `notifications`, and related operational tables.
 - [ ] Ensure fishermen can only read/write their own linked records and trips.
 - [ ] Ensure BMU officers can only manage records for their assigned BMU.
 - [ ] Ensure rescue officers can read active rescue/SOS data but cannot manage unrelated admin data.
@@ -16,15 +16,15 @@
 
 ## Priority 1: Secure Server-Side Operations
 
-- [ ] Move role changes from direct browser writes to admin-only RPC/server actions.
-- [ ] Move fisherman trip creation/check-in to RPC/server actions with ownership checks.
-- [ ] Move software SOS trigger/cancel to RPC/server actions with fisherman/device ownership checks.
-- [ ] Move rescue alert status changes to rescue-officer-only RPC/server actions.
-- [ ] Move BMU registration actions for fishermen, boats, devices, crew, and trip approval to BMU-scoped RPC/server actions.
-- [ ] Enforce valid alert and trip status transitions in the database.
-- [ ] Add audit logging for role changes, trip status changes, SOS cancellation, rescue assignment, and alert closure.
-- [ ] Prevent an admin from removing the last admin role or accidentally locking themselves out.
-- [ ] Require reason/notes for rejecting trips, cancelling trips, cancelling SOS, closing rescue operations, and disabling devices.
+- [x] Move role changes from direct browser writes to admin-only RPC/server actions.
+- [x] Move fisherman trip creation/check-in to RPC/server actions with ownership checks.
+- [x] Move software SOS trigger/cancel to RPC/server actions with fisherman/device ownership checks.
+- [x] Move rescue alert status changes to rescue-officer-only RPC/server actions.
+- [x] Move BMU registration actions for fishermen, boats, devices, crew, and trip approval to BMU-scoped RPC/server actions.
+- [x] Enforce valid alert and trip status transitions in the database.
+- [x] Add audit logging for role changes, trip status changes, SOS cancellation, rescue assignment, and alert closure.
+- [x] Prevent an admin from removing the last admin role or accidentally locking themselves out.
+- [x] Require reason/notes for rejecting trips, cancelling SOS, closing rescue operations, and disabling devices.
 
 ## Priority 2: Hardware Ingest Hardening
 
@@ -71,9 +71,9 @@ When a fisherman cancels, operational state must return to what it was before th
 - [ ] Restore trip from `sos` or `rescue_in_progress` back to `at_sea` (not `returned` or `cancelled`).
 - [ ] Close or resolve any open `rescue_operations` linked to the alert.
 - [ ] Stop rescue dashboard alarm/realtime distress state for that incident.
-- [ ] **Fix software cancel bug:** `cancelSoftwareSos()` only restores trip when `activeTrip` is set, but `activeTrip` currently excludes `sos` and `rescue_in_progress` — so after triggering SOS the trip is never restored on software cancel (`fisherman.tsx`).
-- [ ] Unify software cancel (`cancelSoftwareSos`) and hardware cancel (`/api/public/ingest/cancel`) so both update alert, trip, and rescue_operations the same way.
-- [ ] Require a false-alarm reason/note on every fisherman SOS cancel; store on alert and/or trip history.
+- [x] **Fix software cancel bug:** `cancelSoftwareSos()` now restores the trip when the active trip is in `sos` or `rescue_in_progress`, and the cancel path uses the shared helper for state restoration.
+- [x] Unify software cancel (`cancelSoftwareSos`) and hardware cancel (`/api/public/ingest/cancel`) so both update alert, trip, and rescue_operations in the same way.
+- [x] Require a false-alarm reason/note on every fisherman SOS cancel; the software path prompts for a reason and the hardware path records a cancel note while closing the alert.
 - [ ] If rescue has already acknowledged or assigned the alert, still allow cancel only through the controlled flow above and notify rescue officers (do not silently undo an in-progress response).
 - [ ] Keep GPS logs and prior alert rows immutable; only operational status fields reset.
 
