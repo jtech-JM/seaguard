@@ -187,18 +187,17 @@ function FishermanPortal() {
 
   const activeTrip = trips.find((t) => ACTIVE_TRIP_STATUSES.includes(t.status));
 
-  const tripRequestBlockedReason =
-    activeTrip
-      ? "You already have an open trip. Check in or resolve the current trip before requesting another."
-      : fisherman?.active === false
+  const tripRequestBlockedReason = activeTrip
+    ? "You already have an open trip. Check in or resolve the current trip before requesting another."
+    : fisherman?.active === false
       ? "Your fisherman registration is inactive. Contact your BMU officer."
       : !boat
-      ? "No boat assigned. A boat is required before requesting a trip."
-      : !device
-      ? "No SOS device assigned. Assign a device before requesting a trip."
-      : !device.active
-      ? "Your assigned SOS device is disabled. Contact your BMU officer."
-      : null;
+        ? "No boat assigned. A boat is required before requesting a trip."
+        : !device
+          ? "No SOS device assigned. Assign a device before requesting a trip."
+          : !device.active
+            ? "Your assigned SOS device is disabled. Contact your BMU officer."
+            : null;
 
   const canCheckIn = activeTrip?.status === "at_sea" || activeTrip?.status === "overdue";
 
@@ -266,11 +265,23 @@ function FishermanPortal() {
 
   async function cancelSoftwareSos() {
     if (!activeAlert) return;
+    const falseAlarmReason = window.prompt(
+      "Please provide a brief reason for cancelling the SOS (false alarm):",
+      "",
+    );
+    if (!falseAlarmReason || falseAlarmReason.trim().length === 0) {
+      alert("SOS cancelation requires a reason. If this was not a false alarm, do not cancel.");
+      return;
+    }
     setBusy(true);
     try {
       await supabase
         .from("sos_alerts")
-        .update({ status: "closed", resolved_at: new Date().toISOString() })
+        .update({
+          status: "closed",
+          resolved_at: new Date().toISOString(),
+          notes: `${activeAlert.notes ?? ""}${activeAlert.notes ? " \n" : ""}False alarm reason: ${falseAlarmReason.trim()}`,
+        })
         .eq("id", activeAlert.id);
 
       if (activeTrip) {
@@ -287,6 +298,10 @@ function FishermanPortal() {
 
   async function checkOut() {
     if (!profile?.fisherman_id) return;
+    if (tripRequestBlockedReason) {
+      alert(tripRequestBlockedReason);
+      return;
+    }
     if (form.expected_return) {
       const returnDate = new Date(form.expected_return);
       if (returnDate < new Date()) {
@@ -537,8 +552,9 @@ function FishermanPortal() {
                   </button>
                 ) : (
                   <div className="mt-4 text-xs text-foam/70">
-                    This trip cannot be checked in while it is in {TRIP_STATUS_LABEL[activeTrip.status].toLowerCase()} status.
-                    The SOS or rescue incident must be resolved first.
+                    This trip cannot be checked in while it is in{" "}
+                    {TRIP_STATUS_LABEL[activeTrip.status].toLowerCase()} status. The SOS or rescue
+                    incident must be resolved first.
                   </div>
                 )}
               </div>
