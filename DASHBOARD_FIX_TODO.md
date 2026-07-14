@@ -38,7 +38,7 @@
 
 ## Priority 3: Dashboard Completeness
 
-- [ ] Fix Fisherman active-trip logic to include `sos`, `rescue_in_progress`, and `overdue`.
+- [ ] Fix Fisherman active-trip logic to include `sos`, `rescue_in_progress`, and `overdue` (also required for SOS cancel to restore trip — see **Fisherman Cancel & State Restoration** below).
 - [ ] Prevent trip check-in while a trip is in SOS/rescue state unless explicitly resolved.
 - [ ] Filter crew selection by BMU and active/eligible fisherman records.
 - [ ] Treat `captain` as a trip context, not a separate system role.
@@ -52,7 +52,36 @@
 - [ ] Add clear error/success messages instead of browser `alert()`.
 - [ ] Add loading, empty, and failed states for all dashboard data panels.
 - [ ] Fix broken/mojibake UI text such as `â€”`, `Â·`, and corrupted icons.
-- [ ] Add confirmation flows for destructive/high-risk actions such as cancel SOS and role removal.
+- [ ] Add confirmation flows for destructive/high-risk actions such as cancel SOS, cancel trip request, and role removal.
+
+## Fisherman Cancel & State Restoration
+
+When a fisherman cancels, operational state must return to what it was before the cancelled action. Historical records (GPS logs, trip history, closed alerts) stay for audit.
+
+### Cancel trip request (`pending_approval`)
+
+- [ ] Add captain-only "Cancel request" action on `pending_approval` trips in the Fisherman dashboard (currently only BMU reject exists in `bmu.tsx`).
+- [ ] Set trip status to `cancelled`; do not touch alerts, devices, or crew history.
+- [ ] Return UI to no-active-trip state so the fisherman can submit a new request.
+- [ ] Add confirmation dialog before cancelling a pending request.
+
+### Cancel SOS (false alarm while at sea)
+
+- [ ] On SOS cancel, close the open `sos_alerts` row (`status = closed`, `resolved_at` set).
+- [ ] Restore trip from `sos` or `rescue_in_progress` back to `at_sea` (not `returned` or `cancelled`).
+- [ ] Close or resolve any open `rescue_operations` linked to the alert.
+- [ ] Stop rescue dashboard alarm/realtime distress state for that incident.
+- [ ] **Fix software cancel bug:** `cancelSoftwareSos()` only restores trip when `activeTrip` is set, but `activeTrip` currently excludes `sos` and `rescue_in_progress` — so after triggering SOS the trip is never restored on software cancel (`fisherman.tsx`).
+- [ ] Unify software cancel (`cancelSoftwareSos`) and hardware cancel (`/api/public/ingest/cancel`) so both update alert, trip, and rescue_operations the same way.
+- [ ] Require a false-alarm reason/note on every fisherman SOS cancel; store on alert and/or trip history.
+- [ ] If rescue has already acknowledged or assigned the alert, still allow cancel only through the controlled flow above and notify rescue officers (do not silently undo an in-progress response).
+- [ ] Keep GPS logs and prior alert rows immutable; only operational status fields reset.
+
+### What must NOT change on cancel
+
+- [ ] Device assignment, boat ownership, and fisherman profile links stay unchanged.
+- [ ] Crew membership on the trip stays unchanged (trip remains `at_sea` after SOS cancel, or `cancelled` after request cancel).
+- [ ] Do not delete `gps_logs`, `trip_status_history`, or closed alert records.
 
 ## Priority 4: Onboarding and Rescue Workflow Rules
 
@@ -72,9 +101,9 @@
 - [ ] Prevent disabled or stale devices from being used for new trip approvals.
 - [ ] Prevent overlapping active trips for the same fisherman, boat, or device.
 - [ ] Require `expected_return` and destination/fishing area before BMU approval.
-- [ ] Define allowed trip transitions, for example `pending_approval -> at_sea -> returned`, `at_sea -> sos -> rescue_in_progress -> rescued/returned`, and `at_sea -> overdue`.
-- [ ] Define allowed SOS transitions, for example `new -> acknowledged -> assigned -> in_progress -> resolved -> closed`.
-- [ ] Prevent fisherman-driven SOS cancellation after acknowledgement/assignment unless the system records a false-alarm reason and alerts rescue officers.
+- [ ] Define allowed trip transitions, for example `pending_approval -> at_sea -> returned`, `pending_approval -> cancelled` (captain withdraws request), `at_sea -> sos -> rescue_in_progress -> rescued/returned`, `sos -> at_sea` (false-alarm cancel), and `at_sea -> overdue`.
+- [ ] Define allowed SOS transitions, for example `new -> acknowledged -> assigned -> in_progress -> resolved -> closed`, and `new/acknowledged/assigned/in_progress -> closed` (false-alarm cancel with reason).
+- [ ] Enforce fisherman-driven SOS cancellation rules in DB/RPC (see **Fisherman Cancel & State Restoration**): auto-mark fisherman-initiated cancels as false alarms; notify rescue if already acknowledged/assigned.
 - [ ] Require rescue closure notes, outcome, assigned team, and timestamps before an incident can be fully closed.
 - [ ] Keep historical trips, alerts, GPS logs, and rescue operations immutable or soft-deleted only.
 - [ ] Add post-incident review visibility for BMU officers and admins.
@@ -86,7 +115,7 @@
 - [ ] Move dashboard statistics into a single summary RPC or database view.
 - [ ] Reduce polling frequency where realtime already covers updates.
 - [ ] Ensure realtime subscriptions are cleaned up correctly.
-- [ ] Compress or replace the 4.5 MB alarm audio asset.
+- [ ] Compress  the 4.5 MB alarm audio asset.
 - [ ] Code-split Leaflet and rescue-heavy modules more aggressively.
 
 ## Priority 6: Admin Dashboard Reliability
@@ -104,5 +133,5 @@
 - [ ] Normalize line endings so `npm.cmd run lint` passes.
 - [ ] Run `npm.cmd run build` after each major change.
 - [ ] Add RLS/RPC permission tests for fisherman, BMU officer, rescue officer, and admin users.
-- [ ] Add workflow tests for trip request, BMU approval, SOS trigger, rescue assignment, cancellation, and resolution.
+- [ ] Add workflow tests for trip request, BMU approval, captain cancel trip request, SOS trigger, rescue assignment, fisherman SOS cancel (restores trip to `at_sea`), hardware SOS cancel, and rescue resolution.
 - [ ] Update `README.md` and `HARDWARE_INTEGRATION.md` with the final provisioning and security model.

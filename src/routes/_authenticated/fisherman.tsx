@@ -36,6 +36,7 @@ interface FishermanFull {
   phone: string | null;
   national_id: string | null;
   bmu_id: string | null;
+  active: boolean;
   bmu?: { name: string } | null;
 }
 interface BoatRow {
@@ -174,12 +175,39 @@ function FishermanPortal() {
     });
   }, []);
 
-  const activeTrip = trips.find(
-    (t) => t.status === "at_sea" || t.status === "checked_out" || t.status === "pending_approval",
-  );
+  const ACTIVE_TRIP_STATUSES: TripStatus[] = [
+    "pending_approval",
+    "checked_out",
+    "at_sea",
+    "sos",
+    "rescue_in_progress",
+    "overdue",
+  ];
+  const CAN_CHECKIN_STATUSES: TripStatus[] = ["at_sea", "overdue", "rescued"];
+
+  const activeTrip = trips.find((t) => ACTIVE_TRIP_STATUSES.includes(t.status));
+
+  const tripRequestBlockedReason =
+    activeTrip
+      ? "You already have an open trip. Check in or resolve the current trip before requesting another."
+      : fisherman?.active === false
+      ? "Your fisherman registration is inactive. Contact your BMU officer."
+      : !boat
+      ? "No boat assigned. A boat is required before requesting a trip."
+      : !device
+      ? "No SOS device assigned. Assign a device before requesting a trip."
+      : !device.active
+      ? "Your assigned SOS device is disabled. Contact your BMU officer."
+      : null;
+
+  const canCheckIn = activeTrip?.status === "at_sea" || activeTrip?.status === "overdue";
 
   async function triggerSoftwareSos() {
     if (!profile?.fisherman_id || !device) return;
+    if (!device.active) {
+      alert("Your assigned SOS device is disabled. Contact your BMU officer.");
+      return;
+    }
     setBusy(true);
     try {
       navigator.geolocation.getCurrentPosition(
@@ -499,7 +527,7 @@ function FishermanPortal() {
                   <div className="mt-4 text-xs text-yellow-300/80">
                     Waiting for BMU officer approval before departure.
                   </div>
-                ) : (
+                ) : canCheckIn ? (
                   <button
                     onClick={() => checkIn(activeTrip.id)}
                     disabled={busy}
@@ -507,6 +535,11 @@ function FishermanPortal() {
                   >
                     <LogIn className="h-4 w-4" /> Check in — I'm back
                   </button>
+                ) : (
+                  <div className="mt-4 text-xs text-foam/70">
+                    This trip cannot be checked in while it is in {TRIP_STATUS_LABEL[activeTrip.status].toLowerCase()} status.
+                    The SOS or rescue incident must be resolved first.
+                  </div>
                 )}
               </div>
             ) : (
@@ -573,11 +606,16 @@ function FishermanPortal() {
                 </div>
                 <button
                   onClick={checkOut}
-                  disabled={busy}
+                  disabled={busy || !!tripRequestBlockedReason}
                   className="mt-4 rounded-lg bg-distress px-4 py-2 text-sm font-semibold text-foam hover:bg-distress/90 disabled:opacity-60"
                 >
                   Submit trip request
                 </button>
+                {tripRequestBlockedReason ? (
+                  <div className="mt-3 rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-3 text-xs text-yellow-200">
+                    {tripRequestBlockedReason}
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
