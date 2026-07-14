@@ -199,7 +199,7 @@ function FishermanPortal() {
             ? "Your assigned SOS device is disabled. Contact your BMU officer."
             : null;
 
-  const canCheckIn = activeTrip?.status === "at_sea" || activeTrip?.status === "overdue";
+  const canCheckIn = activeTrip ? CAN_CHECKIN_STATUSES.includes(activeTrip.status) : false;
 
   async function triggerSoftwareSos() {
     if (!profile?.fisherman_id || !device) return;
