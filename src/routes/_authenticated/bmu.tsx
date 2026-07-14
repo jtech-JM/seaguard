@@ -4,7 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import type { BMU, Boat, Device, Fisherman, TripStatus } from "@/lib/marine-types";
 import { TRIP_STATUS_LABEL, TRIP_STATUS_TONE } from "@/lib/marine-types";
 import { requireRole, type RouteContext } from "@/lib/route-guard";
+import { canTransitionTripStatus } from "@/lib/trip-status";
 import { STAFF_ROLES } from "@/lib/use-role";
+import { manageBoat, manageCrewMember, manageDevice, manageFisherman, transitionTrip, linkProfile, unlinkProfile } from "@/lib/bmu-ops";
 import {
   Anchor,
   Cpu,
@@ -256,19 +258,36 @@ function TripsSection({
   const pending = filtered.filter((t) => t.status === "pending_approval");
   const rest = filtered.filter((t) => t.status !== "pending_approval");
 
-  async function approve(id: string) {
-    await supabase
-      .from("sea_trips")
-      .update({ status: "at_sea", actual_departure: new Date().toISOString() })
-      .eq("id", id);
+  async function approve(id: string, currentStatus: SeaTrip["status"]) {
+    if (!canTransitionTripStatus(currentStatus, "at_sea")) {
+      return;
+    }
+    const { error } = await transitionTrip(id, "at_sea");
+    if (error) {
+      window.alert(error.message);
+    }
     onChange();
   }
-  async function reject(id: string) {
-    await supabase.from("sea_trips").update({ status: "cancelled" }).eq("id", id);
+  async function reject(id: string, currentStatus: SeaTrip["status"]) {
+    if (!canTransitionTripStatus(currentStatus, "cancelled")) {
+      return;
+    }
+    const reason = window.prompt("Please provide a short reason for rejecting this trip request:");
+    if (!reason || reason.trim().length === 0) {
+      window.alert("A rejection reason is required.");
+      return;
+    }
+    const { error } = await transitionTrip(id, "cancelled", reason);
+    if (error) {
+      window.alert(error.message);
+    }
     onChange();
   }
   async function markOverdue(id: string) {
-    await supabase.from("sea_trips").update({ status: "overdue" }).eq("id", id);
+    const { error } = await transitionTrip(id, "overdue");
+    if (error) {
+      window.alert(error.message);
+    }
     onChange();
   }
 
@@ -306,13 +325,13 @@ function TripsSection({
                     Crew
                   </button>
                   <button
-                    onClick={() => reject(t.id)}
+                    onClick={() => reject(t.id, t.status)}
                     className="rounded-lg border border-distress/30 px-3 py-1.5 text-xs text-distress hover:bg-distress/10"
                   >
                     Reject
                   </button>
                   <button
-                    onClick={() => approve(t.id)}
+                    onClick={() => approve(t.id, t.status)}
                     className="rounded-lg bg-tide px-3 py-1.5 text-xs font-semibold text-ocean hover:bg-tide/90"
                   >
                     Approve & Dispatch
@@ -452,18 +471,24 @@ function CrewModal({
   async function addMember() {
     if (!addId) return;
     setBusy(true);
-    await supabase
-      .from("trip_crew")
-      .insert({ trip_id: tripId, fisherman_id: addId, role: addRole || null });
+    const { error } = await manageCrewMember({ action: "add", tripId, fishermanId: addId, role: addRole || null });
     setAddId("");
     setAddRole("");
-    await loadCrew();
+    if (!error) {
+      await loadCrew();
+    } else {
+      window.alert(error.message);
+    }
     setBusy(false);
   }
 
   async function removeMember(id: string) {
-    await supabase.from("trip_crew").delete().eq("id", id);
-    loadCrew();
+    const { error } = await manageCrewMember({ action: "remove", tripId, crewId: id });
+    if (!error) {
+      loadCrew();
+    } else {
+      window.alert(error.message);
+    }
   }
 
   const crewIds = new Set(crew.map((c) => c.fisherman_id));
@@ -595,8 +620,12 @@ function FishermenSection({
             <button
               onClick={async () => {
                 if (!confirm("Delete this fisherman?")) return;
-                await supabase.from("fishermen").delete().eq("id", f.id);
-                onChange();
+                const { error } = await manageFisherman({ action: "delete", id: f.id });
+                if (!error) {
+                  onChange();
+                } else {
+                  window.alert(error.message);
+                }
               }}
               className="rounded p-1.5 text-foam/60 hover:bg-distress/15 hover:text-distress"
             >
@@ -691,13 +720,10 @@ function LinkProfileModal({
     setBusy(true);
     try {
       if (currentLink && currentLink.id !== selectedProfileId) {
-        await supabase.from("profiles").update({ fisherman_id: null }).eq("id", currentLink.id);
+        await unlinkProfile(currentLink.id);
       }
       if (selectedProfileId) {
-        await supabase
-          .from("profiles")
-          .update({ fisherman_id: fisherman.id })
-          .eq("id", selectedProfileId);
+        await linkProfile(selectedProfileId, fisherman.id);
       }
       onSaved();
     } finally {
@@ -817,29 +843,44 @@ function FishermanModal({
     try {
       let fishermanId: string;
       if (initial) {
-        await supabase.from("fishermen").update(form).eq("id", initial.id);
+        const { data, error } = await manageFisherman({
+          action: "update",
+          id: initial.id,
+          fullName: form.full_name,
+          phone: form.phone,
+          nationalId: form.national_id,
+          emergencyContactName: form.emergency_contact_name,
+          emergencyContactPhone: form.emergency_contact_phone,
+          photoUrl: form.photo_url,
+          active: form.active,
+          bmuId: form.bmu_id,
+        });
+        if (error) throw error;
         fishermanId = initial.id;
       } else {
-        const { data, error } = await supabase
-          .from("fishermen")
-          .insert(form as Omit<Fisherman, "id">)
-          .select("id")
-          .single();
+        const { data, error } = await manageFisherman({
+          action: "create",
+          fullName: form.full_name,
+          phone: form.phone,
+          nationalId: form.national_id,
+          emergencyContactName: form.emergency_contact_name,
+          emergencyContactPhone: form.emergency_contact_phone,
+          photoUrl: form.photo_url,
+          active: form.active,
+          bmuId: form.bmu_id,
+        });
         if (error) throw error;
-        fishermanId = data.id;
+        fishermanId = data ?? "";
+        if (!fishermanId) {
+          throw new Error("Failed to create fisherman");
+        }
       }
 
-      // Handle account link change
       if (currentLink && currentLink.id !== selectedProfileId) {
-        // Unlink the previous account
-        await supabase.from("profiles").update({ fisherman_id: null }).eq("id", currentLink.id);
+        await unlinkProfile(currentLink.id);
       }
       if (selectedProfileId) {
-        // Unlink from any other fisherman first, then link here
-        await supabase.from("profiles").update({ fisherman_id: null })
-          .eq("fisherman_id", fishermanId).neq("id", selectedProfileId);
-        await supabase.from("profiles").update({ fisherman_id: fishermanId })
-          .eq("id", selectedProfileId);
+        await linkProfile(selectedProfileId, fishermanId);
       }
 
       onSaved();
@@ -964,8 +1005,12 @@ function BoatsSection({
             }}
             onDelete={async () => {
               if (!confirm("Delete this boat?")) return;
-              await supabase.from("boats").delete().eq("id", b.id);
-              onChange();
+              const { error } = await manageBoat({ action: "delete", id: b.id });
+              if (!error) {
+                onChange();
+              } else {
+                window.alert(error.message);
+              }
             }}
           />,
         ])}
@@ -1004,9 +1049,29 @@ function BoatModal({
   async function save() {
     setBusy(true);
     try {
-      if (initial) await supabase.from("boats").update(form).eq("id", initial.id);
-      else await supabase.from("boats").insert(form as Omit<Boat, "id">);
-      onSaved();
+      const { error } = initial
+        ? await manageBoat({
+            action: "update",
+            id: initial.id,
+            name: form.name,
+            registrationNumber: form.registration_number,
+            boatType: form.boat_type,
+            ownerFishermanId: form.owner_fisherman_id,
+            bmuId: form.bmu_id,
+          })
+        : await manageBoat({
+            action: "create",
+            name: form.name,
+            registrationNumber: form.registration_number,
+            boatType: form.boat_type,
+            ownerFishermanId: form.owner_fisherman_id,
+            bmuId: form.bmu_id,
+          });
+      if (error) {
+        window.alert(error.message);
+      } else {
+        onSaved();
+      }
     } finally {
       setBusy(false);
     }
@@ -1110,8 +1175,12 @@ function DevicesSection({
               onDelete={async () => {
                 if (!confirm("Delete this device? Its credentials will stop working immediately."))
                   return;
-                await supabase.from("devices").delete().eq("id", d.id);
-                onChange();
+                const { error } = await manageDevice({ action: "delete", id: d.id });
+                if (!error) {
+                  onChange();
+                } else {
+                  window.alert(error.message);
+                }
               }}
             />,
           ];
@@ -1158,30 +1227,36 @@ function DeviceModal({
     setBusy(true);
     try {
       if (initial) {
-        await supabase
-          .from("devices")
-          .update({
-            device_id: form.device_id,
-            boat_id: form.boat_id ?? null,
-            hardware_type: form.hardware_type,
-            active: form.active,
-          })
-          .eq("id", initial.id);
-        onSaved();
+        const reason = form.active === false ? window.prompt("Please provide a reason for disabling this device:") : null;
+        if (form.active === false && (!reason || reason.trim().length === 0)) {
+          window.alert("A reason is required when disabling a device.");
+          return;
+        }
+        const { error } = await manageDevice({
+          action: "update",
+          id: initial.id,
+          deviceId: form.device_id,
+          boatId: form.boat_id ?? null,
+          hardwareType: form.hardware_type,
+          active: form.active,
+          reason: reason ?? null,
+        });
+        if (error) {
+          window.alert(error.message);
+        } else {
+          onSaved();
+        }
       } else {
-        const { data, error } = await supabase
-          .from("devices")
-          .insert({
-            device_id: form.device_id!,
-            boat_id: form.boat_id ?? null,
-            hardware_type: form.hardware_type ?? "esp32-sim7600",
-            active: form.active ?? true,
-          } as unknown as Omit<Device, "id">)
-          .select("device_secret")
-          .single();
+        const { data, error } = await manageDevice({
+          action: "create",
+          deviceId: form.device_id!,
+          boatId: form.boat_id ?? null,
+          hardwareType: form.hardware_type ?? "esp32-sim7600",
+          active: form.active ?? true,
+        });
 
         if (error) {
-          alert(error.message);
+          window.alert(error.message);
         } else if (data) {
           setNewSecret(data.device_secret);
         }
@@ -1357,8 +1432,12 @@ function BMUsSection({ items, q, onChange }: { items: BMU[]; q: string; onChange
             }}
             onDelete={async () => {
               if (!confirm("Delete this BMU?")) return;
-              await supabase.from("bmus").delete().eq("id", b.id);
-              onChange();
+              const { error } = await supabase.from("bmus").delete().eq("id", b.id);
+              if (error) {
+                window.alert(error.message);
+              } else {
+                onChange();
+              }
             }}
           />,
         ])}
@@ -1391,9 +1470,14 @@ function BMUModal({
   async function save() {
     setBusy(true);
     try {
-      if (initial) await supabase.from("bmus").update(form).eq("id", initial.id);
-      else await supabase.from("bmus").insert(form as Omit<BMU, "id">);
-      onSaved();
+      const { error } = initial
+        ? await supabase.from("bmus").update(form).eq("id", initial.id)
+        : await supabase.from("bmus").insert(form as Omit<BMU, "id">);
+      if (error) {
+        window.alert(error.message);
+      } else {
+        onSaved();
+      }
     } finally {
       setBusy(false);
     }

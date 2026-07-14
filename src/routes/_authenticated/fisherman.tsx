@@ -8,6 +8,8 @@ import {
   type SOSAlertRow,
 } from "@/lib/marine-types";
 import { requireRole, type RouteContext } from "@/lib/route-guard";
+import { getTripRequestBlockedReason } from "@/lib/trip-request";
+import { cancelSos, cancelTripRequest, checkInTrip, createTripRequest, triggerSos } from "@/lib/server-ops";
 import { Anchor, LogOut, Ship, Radio, LifeBuoy, LogIn, Users } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/fisherman")({
@@ -59,7 +61,9 @@ interface CrewMember {
 }
 interface Trip {
   id: string;
+  captain_id: string | null;
   status: TripStatus;
+  created_at?: string | null;
   planned_departure: string | null;
   actual_departure: string | null;
   expected_return: string | null;
@@ -68,6 +72,7 @@ interface Trip {
   destination: string | null;
   notes: string | null;
   boat?: BoatRow | null;
+  captain?: { full_name: string | null; phone: string | null } | null;
   crew?: CrewMember[];
 }
 
@@ -104,7 +109,8 @@ function FishermanPortal() {
       { data: fm },
       { data: bts },
       { data: dvs },
-      { data: trs },
+      { data: captainTrips },
+      { data: crewRows },
       { data: alts },
       { data: allFm },
     ] = await Promise.all([
@@ -122,11 +128,12 @@ function FishermanPortal() {
       supabase
         .from("sea_trips")
         .select(
-          "*, boat:boat_id(id,name,registration_number,boat_type), crew:trip_crew(id,fisherman_id,role,fisherman:fisherman_id(full_name))",
+          "*, captain:captain_id(full_name,phone), boat:boat_id(id,name,registration_number,boat_type), crew:trip_crew(id,fisherman_id,role,fisherman:fisherman_id(full_name))",
         )
         .eq("captain_id", prof.fisherman_id)
         .order("created_at", { ascending: false })
         .limit(30),
+      supabase.from("trip_crew").select("trip_id").eq("fisherman_id", prof.fisherman_id),
       supabase
         .from("sos_alerts")
         .select("*")
@@ -136,15 +143,39 @@ function FishermanPortal() {
         .limit(1),
       supabase
         .from("fishermen")
-        .select("id, full_name, phone")
+        .select("id, full_name, phone, bmu_id")
         .eq("active", true)
         .neq("id", prof.fisherman_id)
+        .eq("bmu_id", prof.bmu_id)
         .order("full_name"),
     ]);
+    const crewTripIds = Array.from(
+      new Set(((crewRows ?? []) as Array<{ trip_id: string }>).map((row) => row.trip_id).filter(Boolean)),
+    );
+    const { data: crewTrips } =
+      crewTripIds.length > 0
+        ? await supabase
+            .from("sea_trips")
+            .select(
+              "*, captain:captain_id(full_name,phone), boat:boat_id(id,name,registration_number,boat_type), crew:trip_crew(id,fisherman_id,role,fisherman:fisherman_id(full_name))",
+            )
+            .in("id", crewTripIds)
+            .order("created_at", { ascending: false })
+            .limit(30)
+        : { data: [] };
+    const tripMap = new Map<string, Trip>();
+    for (const trip of ([...(captainTrips ?? []), ...(crewTrips ?? [])] as unknown as Trip[])) {
+      tripMap.set(trip.id, trip);
+    }
+    const mergedTrips = Array.from(tripMap.values()).sort((a, b) => {
+      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bTime - aTime;
+    });
     setFisherman(fm as FishermanFull);
     setBoat((bts?.[0] as BoatRow) ?? null);
     setDevice((dvs?.[0] as DeviceRow) ?? null);
-    setTrips((trs as Trip[]) ?? []);
+    setTrips(mergedTrips);
     setActiveAlert((alts?.[0] as unknown as SOSAlertRow) ?? null);
     setAllFishermen((allFm as FishermanFull[]) ?? []);
   }
@@ -186,18 +217,19 @@ function FishermanPortal() {
   const CAN_CHECKIN_STATUSES: TripStatus[] = ["at_sea", "overdue", "rescued"];
 
   const activeTrip = trips.find((t) => ACTIVE_TRIP_STATUSES.includes(t.status));
+  const activeTripIsCaptain = !!activeTrip && activeTrip.captain_id === profile?.fisherman_id;
+  const activeTripIsCrew = !!activeTrip && !activeTripIsCaptain;
 
-  const tripRequestBlockedReason = activeTrip
-    ? "You already have an open trip. Check in or resolve the current trip before requesting another."
-    : fisherman?.active === false
-      ? "Your fisherman registration is inactive. Contact your BMU officer."
-      : !boat
-        ? "No boat assigned. A boat is required before requesting a trip."
-        : !device
-          ? "No SOS device assigned. Assign a device before requesting a trip."
-          : !device.active
-            ? "Your assigned SOS device is disabled. Contact your BMU officer."
-            : null;
+  const tripRequestBlockedReason = getTripRequestBlockedReason({
+    activeTripExists: !!activeTrip,
+    fishermanActive: fisherman?.active,
+    hasBoat: !!boat,
+    hasDevice: !!device,
+    deviceActive: device?.active,
+    expectedReturn: form.expected_return,
+    destination: form.destination,
+    fishingArea: form.fishing_area,
+  });
 
   const canCheckIn = activeTrip ? CAN_CHECKIN_STATUSES.includes(activeTrip.status) : false;
 
@@ -215,38 +247,17 @@ function FishermanPortal() {
           const lng = position.coords.longitude;
           const accuracy = position.coords.accuracy;
 
-          const { data: alertData, error: alertErr } = await supabase
-            .from("sos_alerts")
-            .insert({
-              device_id: device.id,
-              boat_id: boat?.id ?? null,
-              fisherman_id: profile.fisherman_id,
-              bmu_id: fisherman?.bmu_id ?? null,
-              status: "new",
-              last_lat: lat,
-              last_lng: lng,
-              last_accuracy: accuracy,
-              last_ping_at: new Date().toISOString(),
-              notes: "Triggered via software client on mobile/web portal",
-              emergency_level: "HIGH",
-            })
-            .select("id")
-            .single();
+          const { data: alertId, error: alertErr } = await triggerSos({
+            deviceId: device.id,
+            lat,
+            lng,
+            accuracy,
+            notes: "Triggered via software client on mobile/web portal",
+          });
 
           if (alertErr) {
             alert(alertErr.message);
-          } else if (alertData) {
-            await supabase.from("gps_logs").insert({
-              alert_id: alertData.id,
-              device_id: device.id,
-              lat,
-              lng,
-              accuracy,
-            });
-
-            if (activeTrip) {
-              await supabase.from("sea_trips").update({ status: "sos" }).eq("id", activeTrip.id);
-            }
+          } else if (alertId) {
             await load();
           }
           setBusy(false);
@@ -275,17 +286,9 @@ function FishermanPortal() {
     }
     setBusy(true);
     try {
-      await supabase
-        .from("sos_alerts")
-        .update({
-          status: "closed",
-          resolved_at: new Date().toISOString(),
-          notes: `${activeAlert.notes ?? ""}${activeAlert.notes ? " \n" : ""}False alarm reason: ${falseAlarmReason.trim()}`,
-        })
-        .eq("id", activeAlert.id);
-
-      if (activeTrip) {
-        await supabase.from("sea_trips").update({ status: "at_sea" }).eq("id", activeTrip.id);
+      const { error } = await cancelSos(activeAlert.id, falseAlarmReason);
+      if (error) {
+        throw error;
       }
       setActiveAlert(null);
       await load();
@@ -296,10 +299,34 @@ function FishermanPortal() {
     }
   }
 
+  async function cancelPendingTrip(tripId: string) {
+    if (!window.confirm("Cancel this pending trip request?")) return;
+    setBusy(true);
+    try {
+      const { error } = await cancelTripRequest(tripId);
+      if (error) {
+        alert(error.message);
+      }
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function checkOut() {
     if (!profile?.fisherman_id) return;
-    if (tripRequestBlockedReason) {
-      alert(tripRequestBlockedReason);
+    const blockedReason = getTripRequestBlockedReason({
+      activeTripExists: !!activeTrip,
+      fishermanActive: fisherman?.active,
+      hasBoat: !!boat,
+      hasDevice: !!device,
+      deviceActive: device?.active,
+      expectedReturn: form.expected_return,
+      destination: form.destination,
+      fishingArea: form.fishing_area,
+    });
+    if (blockedReason) {
+      alert(blockedReason);
       return;
     }
     if (form.expected_return) {
@@ -311,34 +338,20 @@ function FishermanPortal() {
     }
     setBusy(true);
     try {
-      const { data: trip, error: tripErr } = await supabase
-        .from("sea_trips")
-        .insert({
-          captain_id: profile.fisherman_id,
-          boat_id: boat?.id ?? null,
-          device_id: device?.id ?? null,
-          bmu_id: fisherman?.bmu_id ?? null,
-          status: "pending_approval",
-          planned_departure: new Date().toISOString(),
-          expected_return: form.expected_return
-            ? new Date(form.expected_return).toISOString()
-            : null,
-          destination: form.destination || null,
-          fishing_area: form.fishing_area || null,
-          notes: form.notes || null,
-        })
-        .select("id")
-        .single();
+      const { data: tripId, error: tripErr } = await createTripRequest({
+        boatId: boat?.id ?? null,
+        deviceId: device?.id ?? null,
+        destination: form.destination || null,
+        fishingArea: form.fishing_area || null,
+        expectedReturn: form.expected_return || null,
+        notes: form.notes || null,
+        crewIds: selectedCrew,
+      });
 
       if (tripErr) {
         alert(tripErr.message);
-      } else if (trip && selectedCrew.length > 0) {
-        const crewInserts = selectedCrew.map((crewId) => ({
-          trip_id: trip.id,
-          fisherman_id: crewId,
-          role: "Crew",
-        }));
-        await supabase.from("trip_crew").insert(crewInserts);
+      } else if (tripId) {
+        // no-op; the RPC already created the trip and crew links
       }
       setForm({ destination: "", fishing_area: "", expected_return: "", notes: "" });
       setSelectedCrew([]);
@@ -351,10 +364,10 @@ function FishermanPortal() {
   async function checkIn(tripId: string) {
     setBusy(true);
     try {
-      await supabase
-        .from("sea_trips")
-        .update({ status: "returned", actual_return: new Date().toISOString() })
-        .eq("id", tripId);
+      const { error } = await checkInTrip(tripId);
+      if (error) {
+        alert(error.message);
+      }
       await load();
     } finally {
       setBusy(false);
@@ -459,7 +472,7 @@ function FishermanPortal() {
                       ? new Date(device.last_seen_at).toLocaleString()
                       : "never seen"}
                   </div>
-                  {activeTrip && activeTrip.status === "at_sea" && (
+                  {activeTrip && activeTripIsCaptain && activeTrip.status === "at_sea" && (
                     <div className="mt-3">
                       {activeAlert ? (
                         <button
@@ -513,11 +526,24 @@ function FishermanPortal() {
                         : "text-foam/60"
                   }`}
                 >
-                  Current trip · {TRIP_STATUS_LABEL[activeTrip.status]}
+                  {activeTripIsCaptain ? "Captain trip" : "Crew trip"} ·{" "}
+                  {TRIP_STATUS_LABEL[activeTrip.status]}
                 </div>
                 <div className="mt-2 text-lg font-semibold">
                   {activeTrip.destination ?? "At sea"}
                 </div>
+                {activeTripIsCrew && (
+                  <div className="mt-1 text-sm text-foam/70">
+                    Captain: {activeTrip.captain?.full_name ?? "Unknown"}
+                    {activeTrip.captain?.phone ? ` · ${activeTrip.captain.phone}` : ""}
+                  </div>
+                )}
+                {activeTrip.boat && (
+                  <div className="mt-1 text-sm text-foam/70">
+                    Boat: {activeTrip.boat.name}
+                    {activeTrip.boat.registration_number ? ` · ${activeTrip.boat.registration_number}` : ""}
+                  </div>
+                )}
                 <div className="mt-1 text-sm text-foam/70">
                   Departed:{" "}
                   {activeTrip.actual_departure
@@ -538,9 +564,23 @@ function FishermanPortal() {
                   </div>
                 )}
 
-                {activeTrip.status === "pending_approval" ? (
-                  <div className="mt-4 text-xs text-yellow-300/80">
-                    Waiting for BMU officer approval before departure.
+                {activeTripIsCrew ? (
+                  <div className="mt-4 rounded-xl border border-foam/10 bg-ocean/30 p-3 text-xs text-foam/70">
+                    You are listed as crew on this trip. The captain manages trip cancellation,
+                    SOS, and check-in for the vessel.
+                  </div>
+                ) : activeTrip.status === "pending_approval" ? (
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <div className="text-xs text-yellow-300/80">
+                      Waiting for BMU officer approval before departure.
+                    </div>
+                    <button
+                      onClick={() => cancelPendingTrip(activeTrip.id)}
+                      disabled={busy}
+                      className="rounded-lg border border-yellow-500/30 px-3 py-1.5 text-xs font-semibold text-yellow-200 hover:bg-yellow-500/10 disabled:opacity-60"
+                    >
+                      Cancel request
+                    </button>
                   </div>
                 ) : canCheckIn ? (
                   <button
