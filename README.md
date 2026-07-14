@@ -32,6 +32,151 @@ Every new signup defaults to `fisherman`. An admin must promote accounts to othe
 
 ---
 
+## System Architecture
+
+```mermaid
+flowchart TB
+    subgraph clients [Web Clients]
+        Auth["/auth"]
+        Admin["/admin"]
+        BMU["/bmu"]
+        Rescue["/rescue"]
+        Fisherman["/fisherman"]
+    end
+
+    subgraph gate [Access Layer]
+        AuthGate["_authenticated/route.tsx\nsession check"]
+        RoleGuard["requireRole()\nper-dashboard guard"]
+    end
+
+    subgraph data [Supabase]
+        DB[(PostgreSQL + RLS)]
+        RT[Realtime]
+        AuthSvc[Supabase Auth]
+    end
+
+    subgraph hardware [Hardware]
+        ESP32[ESP32 SOS Device]
+        Ingest["/api/public/ingest/*\nservice-role bypass"]
+    end
+
+    Auth --> AuthSvc
+    Admin & BMU & Rescue & Fisherman --> AuthGate --> RoleGuard
+    RoleGuard --> DB
+    DB --> RT
+    RT --> Rescue & BMU & Fisherman
+    ESP32 --> Ingest --> DB
+```
+
+Web clients authenticate via Supabase Auth, pass through the `_authenticated` auth gate, and are routed to role-specific dashboards by `requireRole()`. Hardware devices bypass browser auth and call public ingest endpoints, which use the service-role client to write directly to the database.
+
+---
+
+## Operational Flows
+
+### Onboarding
+
+```mermaid
+sequenceDiagram
+    participant A as Admin
+    participant B as BMU Officer
+    participant F as Fisherman
+    participant D as SOS Device
+
+    A->>A: Promote user to bmu_officer
+    B->>B: Register fisherman, boat, device
+    B->>F: Link profile.fisherman_id to fisherman record
+    D->>D: Flash device_id + device_secret
+```
+
+1. Admin promotes a user to `bmu_officer` (or other staff roles).
+2. BMU officer registers fishermen, boats, and SOS devices in `/bmu`.
+3. BMU officer links each fisherman's auth account to their fisherman record (`profiles.fisherman_id`).
+4. Device credentials (`device_id`, `device_secret`) are flashed onto the hardware.
+
+### Sea Trip Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending_approval: Captain requests trip
+    pending_approval --> at_sea: BMU approves
+    pending_approval --> cancelled: BMU rejects
+    at_sea --> overdue: expected_return passed (pg_cron)
+    at_sea --> sos: SOS triggered
+    sos --> rescue_in_progress: Rescue assigns team
+    rescue_in_progress --> rescued: Rescue resolves
+    rescued --> returned: Captain checks in
+    at_sea --> returned: Captain checks in
+```
+
+- Captain submits a trip request from `/fisherman` → `pending_approval`.
+- BMU officer reviews and approves or rejects in `/bmu`.
+- `mark_overdue_trips()` (pg_cron, every 5 min) flags `at_sea` trips past `expected_return` as `overdue`.
+- Captain checks in on return → `returned`.
+
+### SOS & Rescue
+
+```mermaid
+sequenceDiagram
+    participant HW as Device / Fisherman App
+    participant API as Ingest API (hardware) or Browser (software)
+    participant DB as sos_alerts + gps_logs
+    participant R as Rescue Dashboard
+
+    HW->>API: SOS + GPS
+    API->>DB: Create/update alert (status=new)
+    DB-->>R: Realtime push
+    R->>DB: acknowledge → assigned → in_progress → resolved → closed
+    HW->>API: cancel (hardware) or fisherman cancel (software)
+    API->>DB: close alert, restore trip to at_sea
+```
+
+**Hardware path:** `/api/public/ingest/sos`, `location`, `cancel` — authenticated via `x-device-secret`, uses the service-role client (bypasses RLS).
+
+**Software path:** Fisherman portal inserts directly into `sos_alerts` and `gps_logs` from the browser.
+
+Alert status transitions: `new` → `acknowledged` → `assigned` → `in_progress` → `resolved` → `closed`.
+
+---
+
+## Access Control
+
+### Applied Today
+
+| Layer | Mechanism | What it enforces |
+| ----- | --------- | ---------------- |
+| Auth gate | `_authenticated/route.tsx` | Unauthenticated users → `/auth` |
+| Role routing | `requireRole()` + `ROLE_HOME` | Each dashboard only loads for its role; wrong role redirected home |
+| Role priority | `pickPrimary()` in `use-role.ts` | Multi-role users: `admin` > `rescue_officer` > `bmu_officer` > `fisherman` |
+| Hardware ingest | `x-device-secret` header | Timing-safe secret compare; inactive devices rejected |
+| Fisherman link | `chk_fisherman_link_staff` CHECK | Staff accounts cannot be linked to fisherman records |
+
+### Intended Model (in progress)
+
+Role-aware RLS, BMU officer scoping, server-side RPCs for sensitive writes, and hardware hardening are tracked in **[DASHBOARD_FIX_TODO.md](./DASHBOARD_FIX_TODO.md)**.
+
+```mermaid
+flowchart LR
+    subgraph intended [Intended Model]
+        UI1[Browser UI] --> RPC[Role-scoped RPCs]
+        RPC --> RLS2[Strict RLS]
+    end
+
+    subgraph actual [Current Model]
+        UI2[Browser UI] --> RLS1[Broad RLS]
+        HW[Hardware] --> Admin[Service Role API]
+    end
+```
+
+| Role | Intended access |
+| ---- | --------------- |
+| `fisherman` | Own linked records, trips (captain or crew), own alerts |
+| `bmu_officer` | Only assigned BMU(s): fishermen, boats, devices, trip approvals |
+| `rescue_officer` | Read active SOS/rescue data; no admin/BMU management |
+| `admin` | User/role management via controlled RPCs only |
+
+---
+
 ## Project Structure
 
 ```
