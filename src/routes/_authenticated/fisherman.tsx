@@ -143,13 +143,15 @@ function FishermanPortal() {
         .in("status", ["new", "acknowledged", "assigned", "in_progress"])
         .order("started_at", { ascending: false })
         .limit(1),
-      supabase
-        .from("fishermen")
-        .select("id, full_name, phone, bmu_id")
-        .eq("active", true)
-        .neq("id", prof.fisherman_id)
-        .eq("bmu_id", prof.bmu_id)
-        .order("full_name"),
+      prof.bmu_id
+        ? supabase
+            .from("fishermen")
+            .select("id, full_name, phone, bmu_id")
+            .eq("active", true)
+            .neq("id", prof.fisherman_id)
+            .eq("bmu_id", prof.bmu_id)
+            .order("full_name")
+        : Promise.resolve({ data: [] }),
     ]);
     const crewTripIds = Array.from(
       new Set(((crewRows ?? []) as Array<{ trip_id: string }>).map((row) => row.trip_id).filter(Boolean)),
@@ -476,7 +478,7 @@ function FishermanPortal() {
                       ? new Date(device.last_seen_at).toLocaleString()
                       : "never seen"}
                   </div>
-                  {activeTrip && activeTripIsCaptain && activeTrip.status === "at_sea" && (
+                  {activeTripIsCaptain && (
                     <div className="mt-3">
                       {activeAlert ? (
                         <button

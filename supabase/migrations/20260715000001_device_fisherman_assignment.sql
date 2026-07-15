@@ -72,7 +72,9 @@ BEGIN
       RAISE EXCEPTION 'A device must be assigned to a fisherman before it can be created';
     END IF;
 
-    v_secret := encode(gen_random_bytes(24), 'hex');   -- 48-char hex secret
+    v_secret := md5(random()::text || clock_timestamp()::text) ||
+                md5(random()::text || clock_timestamp()::text) ||
+                md5(random()::text || clock_timestamp()::text);   -- ~96-char hex, no extension needed
 
     INSERT INTO public.devices (device_id, fisherman_id, hardware_type, active, device_secret)
     VALUES (p_device_id, p_fisherman_id, p_hardware_type, COALESCE(p_active, true), v_secret)
