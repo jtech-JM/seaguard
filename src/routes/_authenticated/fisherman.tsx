@@ -478,7 +478,7 @@ function FishermanPortal() {
                       ? new Date(device.last_seen_at).toLocaleString()
                       : "never seen"}
                   </div>
-                  {activeTripIsCaptain && (
+                  {activeTrip && activeTripIsCaptain && activeTrip.status === "at_sea" && (
                     <div className="mt-3">
                       {activeAlert ? (
                         <button
