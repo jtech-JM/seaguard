@@ -18,6 +18,8 @@ export async function manageFisherman(input: {
   photoUrl?: string | null;
   active?: boolean;
   bmuId?: string | null;
+  isCertifiedCaptain?: boolean | null;
+  captainLicenseNumber?: string | null;
 }) {
   return (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcResult<string>>)(
     "manage_bmu_fisherman",
@@ -32,6 +34,8 @@ export async function manageFisherman(input: {
       p_photo_url: input.photoUrl ?? null,
       p_active: input.active ?? true,
       p_bmu_id: input.bmuId ?? null,
+      p_is_certified_captain: input.isCertifiedCaptain ?? null,
+      p_captain_license_number: input.captainLicenseNumber ?? null,
     },
   );
 }

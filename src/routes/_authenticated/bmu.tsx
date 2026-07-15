@@ -592,13 +592,20 @@ function FishermenSection({
         }}
       />
       <Table
-        cols={["Name", "Phone", "National ID", "BMU", "Emergency", "Status", ""]}
+        cols={["Name", "Phone", "National ID", "BMU", "Emergency", "Captain", "Status", ""]}
         rows={filtered.map((f) => [
           <span className="font-medium text-foam">{f.full_name}</span>,
           f.phone ?? "—",
           f.national_id ?? "—",
           bmuName(f.bmu_id),
           f.emergency_contact_phone ?? "—",
+          f.is_certified_captain ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-tide/15 px-2 py-0.5 text-[10px] font-semibold text-tide">
+              ⚓ Certified
+            </span>
+          ) : (
+            <span className="text-[11px] text-foam/30">Crew only</span>
+          ),
           <Badge tone={f.active ? "tide" : "muted"}>{f.active ? "Active" : "Inactive"}</Badge>,
           <div className="flex justify-end gap-1">
             <button
@@ -793,7 +800,7 @@ function FishermanModal({
   onSaved: () => void;
 }) {
   const [form, setForm] = useState<Partial<Fisherman>>(
-    initial ?? { full_name: "", active: true, bmu_id: bmus[0]?.id ?? null },
+    initial ?? { full_name: "", active: true, bmu_id: bmus[0]?.id ?? null, is_certified_captain: false, captain_license_number: null },
   );
   const [busy, setBusy] = useState(false);
 
@@ -854,6 +861,8 @@ function FishermanModal({
           photoUrl: form.photo_url,
           active: form.active,
           bmuId: form.bmu_id,
+          isCertifiedCaptain: form.is_certified_captain,
+          captainLicenseNumber: form.captain_license_number,
         });
         if (error) throw error;
         fishermanId = initial.id;
@@ -868,6 +877,8 @@ function FishermanModal({
           photoUrl: form.photo_url,
           active: form.active,
           bmuId: form.bmu_id,
+          isCertifiedCaptain: form.is_certified_captain,
+          captainLicenseNumber: form.captain_license_number,
         });
         if (error) throw error;
         fishermanId = data ?? "";
@@ -928,7 +939,36 @@ function FishermanModal({
         <Input value={form.photo_url ?? ""} onChange={(v) => setForm({ ...form, photo_url: v })} />
       </ModalField>
 
-      {/* ── Inline account linking ─────────────────────────── */}
+      {/* ── Captain certification ──────────────────────────── */}
+      <div className="border-t border-foam/10 pt-3">
+        <div className="mb-2 text-[11px] uppercase tracking-wider text-foam/50">
+          Captain certification
+        </div>
+        <label className="flex cursor-pointer items-center gap-3">
+          <input
+            type="checkbox"
+            checked={form.is_certified_captain ?? false}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                is_certified_captain: e.target.checked,
+                captain_license_number: e.target.checked ? form.captain_license_number : null,
+              })
+            }
+            className="h-4 w-4 rounded border border-foam/20 accent-tide"
+          />
+          <span className="text-sm text-foam">Certified captain</span>
+        </label>
+        {form.is_certified_captain && (
+          <ModalField label="License number (optional)">
+            <Input
+              value={form.captain_license_number ?? ""}
+              onChange={(v) => setForm({ ...form, captain_license_number: v || null })}
+              placeholder="e.g. CPT-2024-00123"
+            />
+          </ModalField>
+        )}
+      </div>
       <div className="border-t border-foam/10 pt-3">
         <div className="mb-2 text-[11px] uppercase tracking-wider text-foam/50">
           Link user account{" "}

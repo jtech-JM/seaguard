@@ -39,6 +39,8 @@ interface FishermanFull {
   national_id: string | null;
   bmu_id: string | null;
   active: boolean;
+  is_certified_captain: boolean;
+  captain_license_number: string | null;
   bmu?: { name: string } | null;
 }
 interface BoatRow {
@@ -172,7 +174,7 @@ function FishermanPortal() {
       const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
       return bTime - aTime;
     });
-    setFisherman(fm as FishermanFull);
+    setFisherman(fm as unknown as FishermanFull);
     setBoat((bts?.[0] as BoatRow) ?? null);
     setDevice((dvs?.[0] as DeviceRow) ?? null);
     setTrips(mergedTrips);
@@ -223,6 +225,7 @@ function FishermanPortal() {
   const tripRequestBlockedReason = getTripRequestBlockedReason({
     activeTripExists: !!activeTrip,
     fishermanActive: fisherman?.active,
+    isCertifiedCaptain: fisherman?.is_certified_captain,
     hasBoat: !!boat,
     hasDevice: !!device,
     deviceActive: device?.active,
@@ -318,6 +321,7 @@ function FishermanPortal() {
     const blockedReason = getTripRequestBlockedReason({
       activeTripExists: !!activeTrip,
       fishermanActive: fisherman?.active,
+      isCertifiedCaptain: fisherman?.is_certified_captain,
       hasBoat: !!boat,
       hasDevice: !!device,
       deviceActive: device?.active,

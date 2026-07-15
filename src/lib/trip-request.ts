@@ -1,6 +1,7 @@
 export interface TripRequestValidationContext {
   activeTripExists: boolean;
   fishermanActive: boolean | null | undefined;
+  isCertifiedCaptain: boolean | null | undefined;
   hasBoat: boolean;
   hasDevice: boolean;
   deviceActive: boolean | null | undefined;
@@ -16,6 +17,10 @@ export function getTripRequestBlockedReason(context: TripRequestValidationContex
 
   if (context.fishermanActive === false) {
     return "Your fisherman registration is inactive. Contact your BMU officer.";
+  }
+
+  if (!context.isCertifiedCaptain) {
+    return "You are not a certified captain. Contact your BMU officer to update your certification.";
   }
 
   if (!context.hasBoat) {

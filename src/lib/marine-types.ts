@@ -40,6 +40,8 @@ export interface Fisherman {
   emergency_contact_phone: string | null;
   photo_url: string | null;
   active: boolean;
+  is_certified_captain: boolean;
+  captain_license_number: string | null;
 }
 
 export interface Boat {
