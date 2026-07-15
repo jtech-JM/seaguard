@@ -10,7 +10,9 @@ create table if not exists public.audit_logs (
 
 alter table public.audit_logs enable row level security;
 
-create policy if not exists "audit_logs read admin"
+drop policy if exists "audit_logs read admin" on public.audit_logs;
+
+create policy "audit_logs read admin"
   on public.audit_logs
   for select
   to authenticated

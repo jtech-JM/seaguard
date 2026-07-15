@@ -141,7 +141,12 @@ DROP POLICY IF EXISTS "notif all auth" ON public.notifications;
 CREATE POLICY "notifications read scoped" ON public.notifications
 FOR SELECT TO authenticated
 USING (
-  auth.uid() = user_id
+  EXISTS (
+    SELECT 1 FROM public.sos_alerts sa
+    JOIN public.profiles p ON p.fisherman_id = sa.fisherman_id
+    WHERE sa.id = notifications.alert_id
+      AND p.id = auth.uid()
+  )
   OR public.current_user_role() IN ('admin', 'rescue_officer', 'bmu_officer')
 );
 

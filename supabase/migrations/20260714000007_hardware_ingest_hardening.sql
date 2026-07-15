@@ -11,7 +11,9 @@ create table if not exists public.ingest_request_logs (
 
 alter table public.ingest_request_logs enable row level security;
 
-create policy if not exists "ingest_request_logs read admin"
+drop policy if exists "ingest_request_logs read admin" on public.ingest_request_logs;
+
+create policy "ingest_request_logs read admin"
   on public.ingest_request_logs
   for select
   to authenticated
