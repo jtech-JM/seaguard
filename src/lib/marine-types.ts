@@ -57,7 +57,7 @@ export interface Device {
   id: string;
   device_id: string;
   device_secret: string;
-  boat_id: string | null;
+  fisherman_id: string | null;
   hardware_type: string | null;
   active: boolean;
   last_seen_at: string | null;

@@ -90,7 +90,7 @@ export const Route = createFileRoute("/api/public/ingest/cancel")({
 
           const { data: alerts } = await supabaseAdmin
             .from("sos_alerts")
-            .select("id, boat_id, status, notes, started_at")
+            .select("id, fisherman_id, status, notes, started_at")
             .eq("device_id", device.id)
             .in("status", ["new", "acknowledged", "assigned", "in_progress"]);
 
@@ -108,11 +108,11 @@ export const Route = createFileRoute("/api/public/ingest/cancel")({
             return bTime - aTime;
           })[0];
 
-          if (latestAlert?.boat_id) {
+          if (latestAlert?.fisherman_id) {
             await supabaseAdmin
               .from("sea_trips")
               .update({ status: "at_sea" })
-              .eq("boat_id", latestAlert.boat_id)
+              .eq("captain_id", latestAlert.fisherman_id)
               .in("status", ["sos", "rescue_in_progress"]);
           }
 

@@ -196,7 +196,7 @@ function BMUDashboard() {
           <BoatsSection items={boats} bmus={bmus} fishermen={fishermen} q={q} onChange={refresh} />
         )}
         {tab === "devices" && (
-          <DevicesSection items={devices} boats={boats} q={q} onChange={refresh} />
+          <DevicesSection items={devices} fishermen={fishermen} q={q} onChange={refresh} />
         )}
         {tab === "bmus" && <BMUsSection items={bmus} q={q} onChange={refresh} />}
       </div>
@@ -1167,19 +1167,20 @@ function BoatModal({
 // ──────────────────── DEVICES ────────────────────
 function DevicesSection({
   items,
-  boats,
+  fishermen,
   q,
   onChange,
 }: {
   items: Device[];
-  boats: Boat[];
+  fishermen: Fisherman[];
   q: string;
   onChange: () => void;
 }) {
   const [editing, setEditing] = useState<Device | null>(null);
   const [open, setOpen] = useState(false);
   const filtered = items.filter((d) => d.device_id.toLowerCase().includes(q.toLowerCase()));
-  const boatName = (id: string | null) => boats.find((b) => b.id === id)?.name ?? "Unassigned";
+  const fishermanName = (id: string | null) =>
+    fishermen.find((f) => f.id === id)?.full_name ?? "Unassigned";
   const now = Date.now();
   return (
     <>
@@ -1191,14 +1192,16 @@ function DevicesSection({
         }}
       />
       <Table
-        cols={["Device ID", "Assigned Boat", "Hardware", "Last Seen", "Status", ""]}
+        cols={["Device ID", "Assigned To", "Hardware", "Last Seen", "Status", ""]}
         rows={filtered.map((d) => {
           const lastMs = d.last_seen_at ? Date.now() - new Date(d.last_seen_at).getTime() : null;
           const isStale = lastMs !== null && lastMs > 15 * 60 * 1000;
           return [
             <span className="font-mono text-tide">{d.device_id}</span>,
-            boatName(d.boat_id),
-            d.hardware_type ?? "esp32-sim7600",
+            <span className={d.fisherman_id ? "text-foam" : "text-yellow-400"}>
+              {fishermanName(d.fisherman_id)}
+            </span>,
+            d.hardware_type ?? "esp32-sim800l",
             d.last_seen_at ? (
               <span className={isStale ? "text-yellow-400" : "text-tide"}>
                 {new Date(d.last_seen_at).toLocaleString()}
@@ -1229,7 +1232,7 @@ function DevicesSection({
       {open && (
         <DeviceModal
           initial={editing}
-          boats={boats}
+          fishermen={fishermen}
           onClose={() => setOpen(false)}
           onSaved={() => {
             setOpen(false);
@@ -1243,19 +1246,19 @@ function DevicesSection({
 
 function DeviceModal({
   initial,
-  boats,
+  fishermen,
   onClose,
   onSaved,
 }: {
   initial: Device | null;
-  boats: Boat[];
+  fishermen: Fisherman[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [form, setForm] = useState<Partial<Device>>(
     initial ?? {
       device_id: "DEV-" + Math.random().toString(36).slice(2, 8).toUpperCase(),
-      hardware_type: "esp32-sim7600",
+      hardware_type: "esp32-sim800l",
       active: true,
     },
   );
@@ -1276,7 +1279,7 @@ function DeviceModal({
           action: "update",
           id: initial.id,
           deviceId: form.device_id,
-          boatId: form.boat_id ?? null,
+          fishermanId: form.fisherman_id ?? null,
           hardwareType: form.hardware_type,
           active: form.active,
           reason: reason ?? null,
@@ -1287,11 +1290,15 @@ function DeviceModal({
           onSaved();
         }
       } else {
+        if (!form.fisherman_id) {
+          window.alert("A device must be assigned to a fisherman before it can be created.");
+          return;
+        }
         const { data, error } = await manageDevice({
           action: "create",
           deviceId: form.device_id!,
-          boatId: form.boat_id ?? null,
-          hardwareType: form.hardware_type ?? "esp32-sim7600",
+          fishermanId: form.fisherman_id,
+          hardwareType: form.hardware_type ?? "esp32-sim800l",
           active: form.active ?? true,
         });
 
@@ -1386,21 +1393,29 @@ function DeviceModal({
       <ModalField label="Device ID (printed on hardware label)">
         <Input value={form.device_id ?? ""} onChange={(v) => setForm({ ...form, device_id: v })} />
       </ModalField>
-      <ModalField label="Assign to boat">
+      <ModalField label="Assign to fisherman (required)">
         <Select
-          value={form.boat_id ?? ""}
-          onChange={(v) => setForm({ ...form, boat_id: v || null })}
+          value={form.fisherman_id ?? ""}
+          onChange={(v) => setForm({ ...form, fisherman_id: v || null })}
           options={[
-            { value: "", label: "— Unassigned —" },
-            ...boats.map((b) => ({ value: b.id, label: b.name })),
+            { value: "", label: "— Select fisherman —" },
+            ...fishermen.map((f) => ({
+              value: f.id,
+              label: `${f.full_name}${f.is_certified_captain ? " ⚓" : ""}`,
+            })),
           ]}
         />
+        {!form.fisherman_id && (
+          <div className="mt-1 text-[10px] text-yellow-400">
+            A device must be assigned to a fisherman before it can be issued.
+          </div>
+        )}
       </ModalField>
       <ModalField label="Hardware type">
         <Select
-          value={form.hardware_type ?? "esp32-sim7600"}
+          value={form.hardware_type ?? "esp32-sim800l"}
           onChange={(v) => setForm({ ...form, hardware_type: v })}
-          options={["esp32-sim7600", "esp32-lora", "other"].map((o) => ({ value: o, label: o }))}
+          options={["esp32-sim800l", "esp32-lora", "other"].map((o) => ({ value: o, label: o }))}
         />
       </ModalField>
       {initial && (

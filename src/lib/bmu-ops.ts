@@ -81,7 +81,7 @@ export async function manageDevice(input: {
   action: "create" | "update" | "delete";
   id?: string;
   deviceId?: string | null;
-  boatId?: string | null;
+  fishermanId?: string | null;
   hardwareType?: string | null;
   active?: boolean;
   reason?: string | null;
@@ -92,7 +92,7 @@ export async function manageDevice(input: {
       p_action: input.action,
       p_id: input.id ?? null,
       p_device_id: input.deviceId ?? null,
-      p_boat_id: input.boatId ?? null,
+      p_fisherman_id: input.fishermanId ?? null,
       p_hardware_type: input.hardwareType ?? null,
       p_active: input.active ?? true,
       p_reason: input.reason ?? null,

@@ -57,9 +57,7 @@ export const Route = createFileRoute("/api/public/ingest/sos")({
 
           const { data: device, error: dErr } = await supabaseAdmin
             .from("devices")
-            .select(
-              "id, boat_id, active, device_secret, boats:boat_id(id, owner_fisherman_id, bmu_id)",
-            )
+            .select("id, fisherman_id, active, device_secret")
             .eq("device_id", body.device_id)
             .maybeSingle();
           if (dErr) throw dErr;
@@ -106,16 +104,33 @@ export const Route = createFileRoute("/api/public/ingest/sos")({
             .maybeSingle();
 
           let alertId = existing?.id as string | undefined;
-          const boat =
-            (
-              device as {
-                boats: {
-                  id: string;
-                  owner_fisherman_id: string | null;
-                  bmu_id: string | null;
-                } | null;
-              }
-            ).boats ?? null;
+
+          // Resolve fisherman and bmu from device assignment
+          const fishermanId = (device as { fisherman_id: string | null }).fisherman_id ?? null;
+          let bmuId: string | null = null;
+          let boatId: string | null = null;
+
+          if (fishermanId) {
+            // Get bmu_id from the fisherman record
+            const { data: fm } = await supabaseAdmin
+              .from("fishermen")
+              .select("bmu_id")
+              .eq("id", fishermanId)
+              .maybeSingle();
+            bmuId = (fm as { bmu_id: string | null } | null)?.bmu_id ?? null;
+
+            // Best-effort: get boat from the fisherman's active trip
+            const { data: activeTrip } = await supabaseAdmin
+              .from("sea_trips")
+              .select("boat_id")
+              .eq("captain_id", fishermanId)
+              .in("status", ["pending_approval", "checked_out", "at_sea", "sos", "rescue_in_progress", "overdue"])
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            boatId = (activeTrip as { boat_id: string | null } | null)?.boat_id ?? null;
+          }
+
           const nowIso = new Date().toISOString();
 
           if (!alertId) {
@@ -123,9 +138,9 @@ export const Route = createFileRoute("/api/public/ingest/sos")({
               .from("sos_alerts")
               .insert({
                 device_id: device.id,
-                boat_id: device.boat_id,
-                fisherman_id: boat?.owner_fisherman_id ?? null,
-                bmu_id: boat?.bmu_id ?? null,
+                boat_id: boatId,
+                fisherman_id: fishermanId,
+                bmu_id: bmuId,
                 status: "new",
                 last_lat: body.lat,
                 last_lng: body.lng,

@@ -122,10 +122,10 @@ function FishermanPortal() {
         .eq("id", prof.fisherman_id)
         .maybeSingle(),
       supabase.from("boats").select("*").eq("owner_fisherman_id", prof.fisherman_id).limit(1),
-      supabase
-        .from("devices")
-        .select("*, boats!inner(owner_fisherman_id)")
-        .eq("boats.owner_fisherman_id", prof.fisherman_id)
+      (supabase.from("devices") as any)
+        .select("*")
+        .eq("fisherman_id", prof.fisherman_id)
+        .eq("active", true)
         .limit(1),
       supabase
         .from("sea_trips")
