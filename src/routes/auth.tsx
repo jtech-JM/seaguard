@@ -43,15 +43,24 @@ function AuthPage() {
     // onAuthStateChange handles both an already-logged-in page load AND the
     // SIGNED_IN event that fires after the OAuth redirect — avoiding the race
     // condition where getSession() runs before Supabase processes the tokens.
+    //
+    // PASSWORD_RECOVERY must be handled before SIGNED_IN: Supabase fires both
+    // in sequence when the user clicks the reset link. We track recoveryMode
+    // in a ref so the SIGNED_IN handler that fires right after does not
+    // redirect the user away before they can set their new password.
+    let recoveryMode = false;
+
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === "PASSWORD_RECOVERY") {
-        // User clicked the reset link — show the set-new-password form
+        recoveryMode = true;
         setCheckingSession(false);
         setMode("reset");
         return;
       }
+      // Block the automatic redirect while the reset form is open
+      if (recoveryMode) return;
       if (session) {
         await goHome(navigate);
       } else {
