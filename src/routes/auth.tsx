@@ -28,7 +28,9 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   // true while we're waiting for onAuthStateChange to fire for the first time
   const [checkingSession, setCheckingSession] = useState(true);
@@ -56,6 +58,11 @@ function AuthPage() {
     setLoading(true);
     try {
       if (mode === "signup") {
+        if (password !== confirmPassword) {
+          setErr("Passwords do not match.");
+          setLoading(false);
+          return;
+        }
         const { error } = await supabase.auth.signUp({
           email,
           password,
@@ -98,7 +105,7 @@ function AuthPage() {
       <div className="min-h-screen bg-[#f5f5f5] dark:bg-[#0f1923] flex flex-col items-center justify-center gap-4">
         <CompassRose />
         <Spinner className="h-6 w-6 text-[#1a6b6b] dark:text-[#4ecdc4]" />
-        <p className="text-sm text-gray-400 dark:text-gray-500">Checking session…</p>
+        <p className="text-sm text-gray-400 dark:text-gray-500">Getting things ready…</p>
       </div>
     );
   }
@@ -189,6 +196,28 @@ function AuthPage() {
               </button>
             }
           />
+          {mode === "signup" && (
+            <FloatingField
+              id="confirmPassword"
+              label="Confirm password"
+              type={showConfirmPassword ? "text" : "password"}
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              required
+              error={confirmPassword.length > 0 && password !== confirmPassword ? "Passwords do not match" : undefined}
+              suffix={
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
+                  aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              }
+            />
+          )}
 
           {err && (
             <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 px-3 py-2 text-xs text-red-600 dark:text-red-400">
@@ -212,7 +241,7 @@ function AuthPage() {
             <>
               No account yet?{" "}
               <button
-                onClick={() => { setMode("signup"); setErr(null); }}
+                onClick={() => { setMode("signup"); setErr(null); setConfirmPassword(""); }}
                 className="font-semibold text-[#1a6b6b] dark:text-[#4ecdc4] hover:underline"
               >
                 Sign up now
@@ -222,7 +251,7 @@ function AuthPage() {
             <>
               Already registered?{" "}
               <button
-                onClick={() => { setMode("signin"); setErr(null); }}
+                onClick={() => { setMode("signin"); setErr(null); setConfirmPassword(""); }}
                 className="font-semibold text-[#1a6b6b] dark:text-[#4ecdc4] hover:underline"
               >
                 Sign in
@@ -258,6 +287,7 @@ function FloatingField({
   onChange,
   required,
   suffix,
+  error,
 }: {
   id: string;
   label: string;
@@ -266,6 +296,7 @@ function FloatingField({
   onChange: (v: string) => void;
   required?: boolean;
   suffix?: React.ReactNode;
+  error?: string;
 }) {
   return (
     <div className="space-y-1">
@@ -283,12 +314,19 @@ function FloatingField({
           required={required}
           placeholder={label}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-4 py-2.5 text-sm text-gray-800 dark:text-white placeholder:text-gray-300 dark:placeholder:text-white/20 outline-none focus:border-[#1a6b6b] dark:focus:border-[#4ecdc4] focus:ring-2 focus:ring-[#1a6b6b]/15 dark:focus:ring-[#4ecdc4]/15 transition pr-10"
+          className={`w-full rounded-xl border px-4 py-2.5 text-sm text-gray-800 dark:text-white placeholder:text-gray-300 dark:placeholder:text-white/20 outline-none transition pr-10 bg-gray-50 dark:bg-white/5 focus:ring-2 ${
+            error
+              ? "border-red-400 dark:border-red-500 focus:border-red-400 focus:ring-red-400/15"
+              : "border-gray-200 dark:border-white/10 focus:border-[#1a6b6b] dark:focus:border-[#4ecdc4] focus:ring-[#1a6b6b]/15 dark:focus:ring-[#4ecdc4]/15"
+          }`}
         />
         {suffix && (
           <div className="absolute inset-y-0 right-3 flex items-center">{suffix}</div>
         )}
       </div>
+      {error && (
+        <p className="text-[11px] text-red-500 dark:text-red-400">{error}</p>
+      )}
     </div>
   );
 }
