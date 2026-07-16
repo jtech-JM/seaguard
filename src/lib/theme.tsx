@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { Sun, Moon } from "lucide-react";
 
 type Theme = "light" | "dark";
 
@@ -75,5 +76,30 @@ export function ThemeToggle() {
     </div>
   );
 }
+
+/**
+ * Inline theme toggle button for use inside page headers (next to Sign Out).
+ * Uses the shared design-system tokens so it renders correctly in both the
+ * `background/foreground/primary` and `ocean/foam` themed pages.
+ */
+export function ThemeToggleButton({ className = "" }: { className?: string }) {
+  if (FORCE_LIGHT) return null;
+  const { theme, setTheme } = useTheme();
+  const isLight = theme === "light";
+  return (
+    <button
+      aria-label="Toggle theme"
+      onClick={() => setTheme(isLight ? "dark" : "light")}
+      title={`Switch to ${isLight ? "dark" : "light"} theme`}
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm transition-all duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${className}`}
+    >
+      {isLight ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+    </button>
+  );
+}
+
+import { Sun, Moon } from "lucide-react";
+
+import { Sun, Moon } from "lucide-react";
 
 export default ThemeProvider;

@@ -1,8 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useTheme } from "@/lib/theme";
-import { Sun, Moon } from "lucide-react";
+import { ThemeToggleButton } from "@/lib/theme";
 import type { BMU, Boat, Device, Fisherman, TripStatus } from "@/lib/marine-types";
 import { TRIP_STATUS_LABEL, TRIP_STATUS_TONE } from "@/lib/marine-types";
 import { requireRole, type RouteContext } from "@/lib/route-guard";
@@ -149,14 +148,7 @@ function BMUDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-            aria-label="Toggle theme"
-            title={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground shadow-sm transition-all duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-          </button>
+          <ThemeToggleButton />
           <button
             onClick={signOut}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground shadow-sm transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
