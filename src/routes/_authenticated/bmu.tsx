@@ -978,7 +978,6 @@ function FishermanModal({
           nationalId: form.national_id,
           emergencyContactName: form.emergency_contact_name,
           emergencyContactPhone: form.emergency_contact_phone,
-          photoUrl: form.photo_url,
           active: form.active,
           bmuId: form.bmu_id,
           isCertifiedCaptain: form.is_certified_captain,
@@ -994,7 +993,6 @@ function FishermanModal({
           nationalId: form.national_id,
           emergencyContactName: form.emergency_contact_name,
           emergencyContactPhone: form.emergency_contact_phone,
-          photoUrl: form.photo_url,
           active: form.active,
           bmuId: form.bmu_id,
           isCertifiedCaptain: form.is_certified_captain,
@@ -1075,9 +1073,6 @@ function FishermanModal({
           />
         </ModalField>
       </div>
-      <ModalField label="Photo URL (optional)">
-        <Input value={form.photo_url ?? ""} onChange={(v) => setForm({ ...form, photo_url: v })} />
-      </ModalField>
 
       {/* ── Captain certification ──────────────────────────── */}
       <div className="border-t border-border pt-3">
