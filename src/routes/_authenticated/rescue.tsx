@@ -166,10 +166,19 @@ function RescueDashboard() {
       .select("id", { count: "exact", head: true })
       .eq("status", "at_sea")
       .lt("expected_return", nowIso);
+    // Count devices seen in the last 15 min.
+    // Use fishermen!inner so devices assigned directly to a fisherman
+    // (no boat) are still counted. Fall back to a boat-join if fisherman_id
+    // is null by running two queries and summing.
     let onlineQ = supabase
       .from("devices")
-      .select("id, boats!inner(bmu_id)", { count: "exact", head: true })
+      .select("id, fishermen!inner(bmu_id)", { count: "exact", head: true })
       .gte("last_seen_at", cutoff);
+    let onlineNoFishermanQ = supabase
+      .from("devices")
+      .select("id, boats!inner(bmu_id)", { count: "exact", head: true })
+      .gte("last_seen_at", cutoff)
+      .is("fisherman_id", null);
     let rescuesQ = supabase
       .from("rescue_operations")
       .select("id, alert:alert_id!inner(bmu_id)", { count: "exact", head: true })
@@ -178,21 +187,23 @@ function RescueDashboard() {
     if (bmuId) {
       tripsQ = tripsQ.eq("bmu_id", bmuId);
       overdueQ = overdueQ.eq("bmu_id", bmuId);
-      onlineQ = onlineQ.eq("boats.bmu_id", bmuId);
+      onlineQ = onlineQ.eq("fishermen.bmu_id", bmuId);
+      onlineNoFishermanQ = onlineNoFishermanQ.eq("boats.bmu_id", bmuId);
       rescuesQ = rescuesQ.eq("alert.bmu_id", bmuId);
     }
 
-    const [atSea, overdue, online, rescues] = await Promise.all([
+    const [atSea, overdue, online, onlineNF, rescues] = await Promise.all([
       tripsQ,
       overdueQ,
       onlineQ,
+      onlineNoFishermanQ,
       rescuesQ,
     ]);
 
     setStats({
       boatsAtSea: atSea.count ?? 0,
       overdue: overdue.count ?? 0,
-      devicesOnline: online.count ?? 0,
+      devicesOnline: (online.count ?? 0) + (onlineNF.count ?? 0),
       activeRescues: rescues.count ?? 0,
     });
   }
