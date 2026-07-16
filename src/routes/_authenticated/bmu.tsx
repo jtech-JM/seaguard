@@ -226,8 +226,7 @@ function BMUDashboard() {
           </button>
           <button
             onClick={() => {
-              const ev = addHandlers[tab];
-              ev?.();
+              addHandlers.current[tab]?.();
             }}
             className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
