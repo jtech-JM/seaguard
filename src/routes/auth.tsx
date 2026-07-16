@@ -30,12 +30,24 @@ function AuthPage() {
   const [fullName, setFullName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  // true while we're waiting for onAuthStateChange to fire for the first time
+  const [checkingSession, setCheckingSession] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) goHome(navigate);
+    // onAuthStateChange handles both an already-logged-in page load AND the
+    // SIGNED_IN event that fires after the OAuth redirect — avoiding the race
+    // condition where getSession() runs before Supabase processes the tokens.
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session) {
+        await goHome(navigate);
+      } else {
+        setCheckingSession(false);
+      }
     });
+    return () => subscription.unsubscribe();
   }, [navigate]);
 
   async function handleEmail(e: React.FormEvent) {
@@ -80,6 +92,18 @@ function AuthPage() {
     }
   }
 
+  // ── Full-page session check spinner ──────────────────────────────────────
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen bg-[#f5f5f5] dark:bg-[#0f1923] flex flex-col items-center justify-center gap-4">
+        <CompassRose />
+        <Spinner className="h-6 w-6 text-[#1a6b6b] dark:text-[#4ecdc4]" />
+        <p className="text-sm text-gray-400 dark:text-gray-500">Checking session…</p>
+      </div>
+    );
+  }
+
+  // ── Login / signup form ───────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#f5f5f5] dark:bg-[#0f1923] flex flex-col items-center justify-center px-4 py-10">
       {/* Header */}
@@ -177,12 +201,7 @@ function AuthPage() {
             disabled={loading}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1a6b6b] hover:bg-[#155858] dark:bg-[#1a8080] dark:hover:bg-[#1a9090] py-3 text-sm font-semibold text-white transition disabled:opacity-60 mt-2"
           >
-            {loading && (
-              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-              </svg>
-            )}
+            {loading && <Spinner className="h-4 w-4" />}
             {mode === "signin" ? "Sign In" : "Create account"}
           </button>
         </form>
@@ -213,6 +232,20 @@ function AuthPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+// ── Reusable spinner ──────────────────────────────────────────────────────────
+function Spinner({ className = "" }: { className?: string }) {
+  return (
+    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+      />
+    </svg>
   );
 }
 
@@ -272,12 +305,10 @@ function CompassRose() {
       aria-hidden="true"
     >
       <circle cx="20" cy="20" r="19" stroke="#1a6b6b" strokeWidth="1.5" className="dark:stroke-[#4ecdc4]" />
-      {/* Cardinal points */}
       <polygon points="20,4 22.5,18 20,16 17.5,18" fill="#1a6b6b" className="dark:fill-[#4ecdc4]" />
       <polygon points="20,36 22.5,22 20,24 17.5,22" fill="#1a6b6b" fillOpacity="0.4" className="dark:fill-[#4ecdc4]" />
       <polygon points="4,20 18,17.5 16,20 18,22.5" fill="#1a6b6b" fillOpacity="0.4" className="dark:fill-[#4ecdc4]" />
       <polygon points="36,20 22,17.5 24,20 22,22.5" fill="#1a6b6b" className="dark:fill-[#4ecdc4]" />
-      {/* Center dot */}
       <circle cx="20" cy="20" r="2.5" fill="#1a6b6b" className="dark:fill-[#4ecdc4]" />
     </svg>
   );
