@@ -11,7 +11,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { ThemeProvider, ThemeToggle } from "../lib/theme";
+import { ThemeProvider } from "../lib/theme";
 
 function NotFoundComponent() {
   return (
@@ -127,7 +127,6 @@ function RootShell({ children }: { children: ReactNode }) {
       <body>
         <ThemeProvider>
           {children}
-          <ThemeToggle />
         </ThemeProvider>
         <Scripts />
       </body>
