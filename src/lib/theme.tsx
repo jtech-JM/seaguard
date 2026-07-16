@@ -98,6 +98,4 @@ export function ThemeToggleButton({ className = "" }: { className?: string }) {
   );
 }
 
-import { Sun, Moon } from "lucide-react";
-
 export default ThemeProvider;
