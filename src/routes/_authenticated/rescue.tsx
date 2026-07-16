@@ -18,7 +18,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { canTransitionAlertStatus } from "@/lib/alert-status";
 import { requireRole, type RouteContext } from "@/lib/route-guard";
-import { ThemeToggleButton } from "@/lib/theme";
+import { useTheme } from "@/lib/theme";
 import { assignRescueOperation, closeRescueOperation, updateAlertStatus } from "@/lib/rescue-ops";
 import alarmUrl from "@/assets/mixkit-retro-game-emergency-alarm-1000.wav?url";
 const ALARM_URL = alarmUrl;
@@ -28,13 +28,16 @@ import {
   BellRing,
   CheckCircle2,
   ClipboardList,
+  ExternalLink,
   MapPin,
+  Moon,
   Navigation,
   Radio,
   RouteIcon,
   Satellite,
   Ship,
   Siren,
+  Sun,
   Volume2,
   Waves,
   X,
@@ -81,6 +84,7 @@ function RescueRouteComponent() {
 
 function RescueDashboard() {
   const navigate = useNavigate();
+  const { theme, setTheme } = useTheme();
   const search = Route.useSearch() as { selected?: string };
   const [alerts, setAlerts] = useState<AlertJoined[]>([]);
   const [bmus, setBMUs] = useState<BMU[]>([]);
@@ -90,6 +94,10 @@ function RescueDashboard() {
   const [muted, setMuted] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
   const [dismissedBannerFor, setDismissedBannerFor] = useState<Set<string>>(new Set());
+  const [userProfile, setUserProfile] = useState<{ name: string; avatarUrl: string | null }>({
+    name: "",
+    avatarUrl: null,
+  });
   const [stats, setStats] = useState({
     boatsAtSea: 0,
     overdue: 0,
@@ -188,6 +196,15 @@ function RescueDashboard() {
   useEffect(() => {
     refresh();
     loadBMUs();
+    // Fetch the signed-in user's profile for the avatar
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) return;
+      const meta = data.user.user_metadata ?? {};
+      setUserProfile({
+        name: (meta.full_name ?? meta.name ?? data.user.email ?? "") as string,
+        avatarUrl: (meta.avatar_url ?? meta.picture ?? null) as string | null,
+      });
+    });
     const tick = window.setInterval(() => setNow(Date.now()), 1000);
     const ch = supabase
       .channel("sos-stream")
@@ -752,7 +769,31 @@ function RescueDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-3 text-xs text-foam/60">
-          <ThemeToggleButton />
+          {/* Theme toggle — clean icon button */}
+          <button
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            aria-label="Toggle theme"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-foam/15 bg-foam/5 text-foam/70 transition hover:bg-foam/15"
+          >
+            {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+          </button>
+
+          {/* User avatar */}
+          <div className="flex items-center gap-2">
+            {userProfile.avatarUrl ? (
+              <img
+                src={userProfile.avatarUrl}
+                alt={userProfile.name}
+                className="h-8 w-8 rounded-full object-cover ring-2 ring-tide/30"
+              />
+            ) : (
+              <div className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-tide/20 ring-2 ring-tide/30 text-[11px] font-bold text-tide uppercase select-none">
+                {userProfile.name ? userProfile.name.charAt(0) : "?"}
+              </div>
+            )}
+          </div>
+
+          {/* BMU filter */}
           {bmus.length > 0 && (
             <select
               value={selectedBmuId}
@@ -769,6 +810,8 @@ function RescueDashboard() {
               ))}
             </select>
           )}
+
+          {/* Active count pill */}
           <div
             className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 ${activeCount ? "bg-distress/15 text-distress" : "text-foam/60"}`}
           >
@@ -777,21 +820,37 @@ function RescueDashboard() {
             />
             {activeCount} active
           </div>
-          {!audioReady && (
+
+          {/* System alarm badge — clicking toggles mute; shows enable prompt if audio locked */}
+          {!audioReady ? (
             <button
               onClick={enableAudio}
-              className="inline-flex animate-pulse items-center gap-1.5 rounded-lg border border-yellow-500/60 bg-yellow-500/20 px-4 py-2 text-sm font-semibold text-yellow-300 hover:bg-yellow-500/30"
+              className="inline-flex animate-pulse items-center gap-2 rounded-lg border border-yellow-500/50 bg-yellow-500/15 px-3 py-1.5 text-xs font-semibold text-yellow-300 hover:bg-yellow-500/25 transition"
             >
-              <Volume2 className="h-4 w-4" /> Click to enable alarm sound
+              <Volume2 className="h-3.5 w-3.5" />
+              ENABLE ALARM SOUND
+              <ExternalLink className="h-3 w-3 opacity-60" />
+            </button>
+          ) : (
+            <button
+              onClick={() => setMuted((m) => !m)}
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                muted
+                  ? "border-foam/15 bg-foam/5 text-foam/50 hover:bg-foam/10"
+                  : alarmActive
+                    ? "animate-pulse border-distress/50 bg-distress/15 text-distress hover:bg-distress/25"
+                    : "border-tide/30 bg-tide/10 text-tide hover:bg-tide/20"
+              }`}
+            >
+              {muted ? (
+                <BellOff className="h-3.5 w-3.5" />
+              ) : (
+                <BellRing className={`h-3.5 w-3.5 ${alarmActive ? "animate-bounce" : ""}`} />
+              )}
+              SYSTEM ALARM:{" "}
+              {muted ? "DISABLED" : alarmActive ? "ACTIVE" : "ENABLED (SILENT)"}
             </button>
           )}
-          <button
-            onClick={() => setMuted((m) => !m)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 hover:bg-foam/10"
-          >
-            {muted ? <BellOff className="h-3.5 w-3.5" /> : <BellRing className="h-3.5 w-3.5" />}
-            {muted ? "Muted" : "Alarm on"}
-          </button>
         </div>
       </header>
 
