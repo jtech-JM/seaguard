@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { requireRole, type RouteContext } from "@/lib/route-guard";
 import { canTransitionAlertStatus } from "@/lib/alert-status";
 import { assignRescueOperation, updateAlertStatus } from "@/lib/rescue-ops";
+import { ThemeToggleButton } from "@/lib/theme";
 import {
   Anchor,
   ArrowLeft,
@@ -219,12 +220,15 @@ function IncidentsPage() {
             <div className="text-sm font-semibold">Incidents</div>
           </div>
         </div>
-        <button
-          onClick={signOut}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 text-xs hover:bg-foam/10"
-        >
-          <LogOut className="h-3.5 w-3.5" /> Sign out
-        </button>
+        <div className="flex items-center gap-2">
+          <ThemeToggleButton />
+          <button
+            onClick={signOut}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 text-xs hover:bg-foam/10"
+          >
+            <LogOut className="h-3.5 w-3.5" /> Sign out
+          </button>
+        </div>
       </header>
 
       {/* Filter bar */}

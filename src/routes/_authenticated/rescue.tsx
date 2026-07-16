@@ -18,6 +18,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { canTransitionAlertStatus } from "@/lib/alert-status";
 import { requireRole, type RouteContext } from "@/lib/route-guard";
+import { ThemeToggleButton } from "@/lib/theme";
 import { assignRescueOperation, closeRescueOperation, updateAlertStatus } from "@/lib/rescue-ops";
 import alarmUrl from "@/assets/mixkit-retro-game-emergency-alarm-1000.wav?url";
 const ALARM_URL = alarmUrl;
@@ -751,6 +752,7 @@ function RescueDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-3 text-xs text-foam/60">
+          <ThemeToggleButton />
           {bmus.length > 0 && (
             <select
               value={selectedBmuId}

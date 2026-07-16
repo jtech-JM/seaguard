@@ -61,8 +61,8 @@ export function useTheme() {
 }
 
 export function ThemeToggle() {
-  if (FORCE_LIGHT) return null;
   const { theme, setTheme } = useTheme();
+  if (FORCE_LIGHT) return null;
   return (
     <div className="fixed right-6 top-4 z-50">
       <button
@@ -83,8 +83,8 @@ export function ThemeToggle() {
  * `background/foreground/primary` and `ocean/foam` themed pages.
  */
 export function ThemeToggleButton({ className = "" }: { className?: string }) {
-  if (FORCE_LIGHT) return null;
   const { theme, setTheme } = useTheme();
+  if (FORCE_LIGHT) return null;
   const isLight = theme === "light";
   return (
     <button
@@ -97,8 +97,6 @@ export function ThemeToggleButton({ className = "" }: { className?: string }) {
     </button>
   );
 }
-
-import { Sun, Moon } from "lucide-react";
 
 import { Sun, Moon } from "lucide-react";
 

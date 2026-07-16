@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Anchor, LifeBuoy, Loader2 } from "lucide-react";
 import { fetchPrimaryRole, ROLE_HOME } from "@/lib/use-role";
+import { ThemeToggleButton } from "@/lib/theme";
 
 async function goHome(navigate: ReturnType<typeof useNavigate>) {
   const { data } = await supabase.auth.getUser();
@@ -91,6 +92,9 @@ function AuthPage() {
           <div>
             <div className="text-[11px] uppercase tracking-[0.2em] text-foam/50">SEAGUARD</div>
             <div className="text-sm font-semibold">Marine Rescue Network</div>
+          </div>
+          <div className="ml-auto">
+            <ThemeToggleButton />
           </div>
         </div>
 
