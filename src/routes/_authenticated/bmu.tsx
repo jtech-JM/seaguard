@@ -131,8 +131,8 @@ function BMUDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-foreground">
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-white px-6 py-3.5 shadow-sm">
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-card px-6 py-3.5 shadow-sm">
         <div className="flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 ring-1 ring-primary/15">
             <LifeBuoy className="h-5 w-5 text-primary" />
@@ -206,12 +206,12 @@ function BMUDashboard() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search records…"
-              className="w-full rounded-full border border-border bg-white py-2 pl-9 pr-3 text-sm text-foreground shadow-sm outline-none transition-colors duration-150 placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              className="w-full rounded-full border border-border bg-card py-2 pl-9 pr-3 text-sm text-foreground shadow-sm outline-none transition-colors duration-150 placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
             />
           </div>
           <button
             onClick={() => setFilterOpen((v) => !v)}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3.5 py-2 text-sm font-medium text-muted-foreground shadow-sm transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-sm font-medium text-muted-foreground shadow-sm transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <Filter className="h-4 w-4" /> Filter
           </button>
@@ -226,7 +226,7 @@ function BMUDashboard() {
         </div>
 
         {filterOpen && (
-          <div className="mb-5 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-white p-3 shadow-sm">
+          <div className="mb-5 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-3 shadow-sm">
             <FilterChip label="Status" options={["Active", "Inactive"]} />
             <FilterChip label="BMU" options={bmus.map((b) => b.name)} />
             <FilterChip label="Captain" options={["Certified", "Crew only"]} />
@@ -432,7 +432,7 @@ function TripsSection({
       )}
 
       <SectionHeader title="All Trips" onAdd={undefined} />
-      <div className="overflow-hidden rounded-xl border border-border bg-white">
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="border-b border-border bg-muted/50 text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -581,7 +581,7 @@ function CrewModal({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-white p-5 text-foreground shadow-xl">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 text-foreground shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-base font-semibold">Trip Crew</h3>
           <button
@@ -1771,7 +1771,7 @@ function FilterChip({ label, options }: { label: string; options: string[] }) {
       >
         <option value="">All</option>
         {options.map((o) => (
-          <option key={o} value={o} className="bg-white">
+          <option key={o} value={o} className="bg-card">
             {o}
           </option>
         ))}
@@ -1899,7 +1899,7 @@ function AnalyticsSidebar({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+      <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
         <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-muted-foreground">
           <TrendingUp className="h-3.5 w-3.5 text-primary" /> Fleet Overview
         </div>
@@ -1918,7 +1918,7 @@ function AnalyticsSidebar({
 
       <div className="grid grid-cols-2 gap-3">
         {metrics.map((m, i) => (
-          <div key={i} className="rounded-xl border border-border bg-white p-3 shadow-sm">
+          <div key={i} className="rounded-xl border border-border bg-card p-3 shadow-sm">
             <div className={`mb-1 ${m.tone}`}>{m.icon}</div>
             <div className="text-xl font-bold leading-none text-foreground">{m.value}</div>
             <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -1949,7 +1949,7 @@ function SectionHeader({ title, onAdd }: { title: string; onAdd?: () => void }) 
 
 function Table({ cols, rows }: { cols: string[]; rows: React.ReactNode[][] }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-white">
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-border bg-muted/50 text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -2059,7 +2059,7 @@ function Modal({
 }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl border border-border bg-white p-5 text-foreground shadow-xl">
+      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl border border-border bg-card p-5 text-foreground shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-base font-semibold">{title}</h3>
           <button
@@ -2094,7 +2094,7 @@ function ModalActions({
   busy: boolean;
 }) {
   return (
-    <div className="sticky bottom-0 -mx-1 mt-5 flex justify-end gap-2 bg-white px-1 pt-4">
+    <div className="sticky bottom-0 -mx-1 mt-5 flex justify-end gap-2 bg-card px-1 pt-4">
       <button
         onClick={onClose}
         className="rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -2147,7 +2147,7 @@ function Select({
       className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors duration-150 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring"
     >
       {options.map((o) => (
-        <option key={o.value} value={o.value} className="bg-white">
+        <option key={o.value} value={o.value} className="bg-card">
           {o.label}
         </option>
       ))}
