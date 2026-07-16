@@ -113,29 +113,33 @@ function BMUDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-ocean text-foam">
-      <header className="flex items-center justify-between border-b border-foam/10 px-6 py-4">
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-card px-6 py-3.5 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="grid h-9 w-9 place-items-center rounded-lg bg-foam/10 ring-1 ring-foam/15">
-            <LifeBuoy className="h-4 w-4 text-distress" />
+          <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 ring-1 ring-primary/15">
+            <LifeBuoy className="h-5 w-5 text-primary" />
           </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.2em] text-foam/50">BMU Console</div>
-            <div className="text-sm font-semibold">Registration & Fleet Management</div>
+          <div className="leading-tight">
+            <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              BMU Console
+            </div>
+            <div className="text-[15px] font-bold tracking-tight text-foreground">
+              Registration &amp; Fleet Management
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={signOut}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 text-xs text-foam/80 hover:bg-foam/10"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <LogOut className="h-3.5 w-3.5" /> Sign out
+            <LogOut className="h-4 w-4" /> Sign out
           </button>
         </div>
       </header>
 
-      <div className="border-b border-foam/10 px-6">
-        <nav className="flex gap-1">
+      <div className="border-b border-border bg-background px-6">
+        <nav className="flex flex-wrap gap-1.5 py-3">
           <TabBtn
             active={tab === "trips"}
             onClick={() => setTab("trips")}
@@ -175,7 +179,7 @@ function BMUDashboard() {
         </nav>
       </div>
 
-      <div className="px-6 py-5">
+      <div className="mx-auto max-w-7xl px-6 py-6">
         <div className="mb-4 flex items-center gap-2">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foam/40" />
