@@ -13,7 +13,9 @@ import {
   type SOSAlertRow,
   type BMU,
   type RescueOperation,
+  type TripCrewMember,
   EMERGENCY_LEVEL_COLOR,
+  haversineKm,
 } from "@/lib/marine-types";
 import { supabase } from "@/integrations/supabase/client";
 import { canTransitionAlertStatus } from "@/lib/alert-status";
@@ -119,6 +121,7 @@ function RescueDashboard() {
   const tileLayerRef = useRef<import("leaflet").TileLayer | null>(null);
   const routeLineRef = useRef<import("leaflet").Polyline | null>(null);
   const routeMarkersRef = useRef<import("leaflet").Marker[]>([]);
+  const bmuMarkersRef = useRef<Map<string, import("leaflet").Marker>>(new Map());
 
   // Per-alert GPS data for the detail panel
   const [detailLatest, setDetailLatest] = useState<GpsLog | null>(null);
@@ -126,6 +129,7 @@ function RescueDashboard() {
   const [detailFollowLive, setDetailFollowLive] = useState(true);
   const [detailShowTrail, setDetailShowTrail] = useState(true);
   const [detailRescueOp, setDetailRescueOp] = useState<RescueOperation | null>(null);
+  const [detailCrew, setDetailCrew] = useState<TripCrewMember[]>([]);
   const [detailOpBusy, setDetailOpBusy] = useState(false);
   const [detailOpNotes, setDetailOpNotes] = useState("");
   const [detailOpTeam, setDetailOpTeam] = useState("");
@@ -146,7 +150,7 @@ function RescueDashboard() {
 
   async function loadBMUs() {
     const { data } = await supabase.from("bmus").select("*").order("name");
-    setBMUs((data as BMU[]) ?? []);
+    setBMUs((data as unknown as BMU[]) ?? []);
   }
 
   async function refreshStats(bmuId?: string) {
@@ -473,18 +477,61 @@ function RescueDashboard() {
     }
   }, [selectedId, filteredAlerts]);
 
+  // ── BMU markers ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    const L = LRef.current;
+    const map = mapRef.current;
+    if (!L || !map) return;
+
+    const currentIds = new Set(bmus.filter((b) => b.lat != null).map((b) => b.id));
+
+    // Remove stale BMU markers
+    bmuMarkersRef.current.forEach((marker, id) => {
+      if (!currentIds.has(id)) {
+        marker.remove();
+        bmuMarkersRef.current.delete(id);
+      }
+    });
+
+    // Add/update BMU markers
+    for (const bmu of bmus) {
+      if (bmu.lat == null || bmu.lng == null) continue;
+      if (bmuMarkersRef.current.has(bmu.id)) continue; // already placed
+      const icon = L.divIcon({
+        className: "",
+        html: `<div title="${bmu.name}" style="
+          width:28px;height:28px;border-radius:9999px;
+          background:#0f766e;border:2.5px solid rgba(255,255,255,0.9);
+          box-shadow:0 2px 6px rgba(0,0,0,0.35);
+          display:flex;align-items:center;justify-content:center;
+          font-size:13px;cursor:default;
+        ">⚓</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      });
+      const marker = L.marker([bmu.lat, bmu.lng], { icon, interactive: true }).addTo(map);
+      marker.bindTooltip(`<strong>${bmu.name}</strong>${bmu.region ? `<br/>${bmu.region}` : ""}`, {
+        direction: "top",
+        offset: [0, -16],
+      });
+      bmuMarkersRef.current.set(bmu.id, marker);
+    }
+  }, [bmus]);
+
   // ── Load detail panel data when selectedId changes ───────────────────────
   useEffect(() => {
     if (!selectedId) {
       setDetailLatest(null);
       setDetailTrail([]);
       setDetailRescueOp(null);
+      setDetailCrew([]);
       return;
     }
     let cancelled = false;
     let ch: ReturnType<typeof supabase.channel> | null = null;
 
     async function loadDetail() {
+      const alert = filteredAlerts.find((a) => a.id === selectedId);
       const [{ data: logs }, { data: op }] = await Promise.all([
         supabase
           .from("gps_logs")
@@ -499,10 +546,32 @@ function RescueDashboard() {
           .order("started_at", { ascending: false })
           .limit(1),
       ]);
+
+      // Load crew via the active/most-recent trip for this alert's fisherman
+      let crewRows: TripCrewMember[] = [];
+      if (alert?.fisherman_id) {
+        const { data: tripData } = await supabase
+          .from("sea_trips")
+          .select("id")
+          .eq("captain_id", alert.fisherman_id)
+          .in("status", ["at_sea", "sos", "rescue_in_progress", "overdue"])
+          .order("planned_departure", { ascending: false })
+          .limit(1);
+        const tripId = tripData?.[0]?.id;
+        if (tripId) {
+          const { data: crew } = await supabase
+            .from("trip_crew")
+            .select("*, fisherman:fisherman_id(full_name, phone)")
+            .eq("trip_id", tripId);
+          crewRows = (crew ?? []) as TripCrewMember[];
+        }
+      }
+
       if (!cancelled) {
         const allLogs = (logs ?? []) as GpsLog[];
         setDetailLatest(allLogs[0] ?? null);
         setDetailTrail([...allLogs].reverse());
+        setDetailCrew(crewRows);
         const opRow = (op?.[0] as RescueOperation) ?? null;
         setDetailRescueOp(opRow);
         if (opRow) {
@@ -650,6 +719,7 @@ function RescueDashboard() {
       mapRef.current = null;
       markersRef.current.clear();
       trailsRef.current.clear();
+      bmuMarkersRef.current.clear();
     },
     [],
   );
@@ -982,10 +1052,12 @@ function RescueDashboard() {
               now={now}
               live={live}
               gpsAgeS={gpsAgeS}
+              bmus={bmus}
               detailTrail={detailTrail}
               detailFollowLive={detailFollowLive}
               detailShowTrail={detailShowTrail}
               detailRescueOp={detailRescueOp}
+              detailCrew={detailCrew}
               detailOpBusy={detailOpBusy}
               detailOpNotes={detailOpNotes}
               detailOpTeam={detailOpTeam}
@@ -1058,10 +1130,12 @@ interface DetailPanelProps {
   now: number;
   live: { lat: number; lng: number; accuracy: number | null } | null;
   gpsAgeS: number | null;
+  bmus: BMU[];
   detailTrail: GpsLog[];
   detailFollowLive: boolean;
   detailShowTrail: boolean;
   detailRescueOp: RescueOperation | null;
+  detailCrew: TripCrewMember[];
   detailOpBusy: boolean;
   detailOpNotes: string;
   detailOpTeam: string;
@@ -1082,10 +1156,12 @@ function DetailPanel({
   now,
   live,
   gpsAgeS,
+  bmus,
   detailTrail,
   detailFollowLive,
   detailShowTrail,
   detailRescueOp,
+  detailCrew,
   detailOpBusy,
   detailOpNotes,
   detailOpTeam,
@@ -1175,6 +1251,38 @@ function DetailPanel({
           <span className="font-mono text-tide">{alert.device?.device_id}</span>
         </div>
 
+        {/* Crew members */}
+        {detailCrew.length > 0 && (
+          <div className="rounded-lg border border-foam/10 bg-foam/[0.03] p-3 text-xs space-y-2">
+            <div className="text-[10px] uppercase tracking-wider text-foam/40 flex items-center gap-1.5">
+              <Ship className="h-3 w-3" />
+              Crew aboard ({detailCrew.length})
+            </div>
+            {detailCrew.map((member) => (
+              <div key={member.id} className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="font-medium text-foam">
+                    {member.fisherman?.full_name ?? "Unknown"}
+                  </div>
+                  {member.fisherman?.phone && (
+                    <a
+                      href={`tel:${member.fisherman.phone}`}
+                      className="text-tide hover:underline text-[10px]"
+                    >
+                      {member.fisherman.phone}
+                    </a>
+                  )}
+                </div>
+                {member.role && (
+                  <span className="shrink-0 rounded border border-foam/15 px-1.5 py-0.5 text-[10px] text-foam/50">
+                    {member.role}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-3 text-xs">
           <Stat label="Latitude" value={live ? live.lat.toFixed(5) : "—"} />
           <Stat label="Longitude" value={live ? live.lng.toFixed(5) : "—"} />
@@ -1192,6 +1300,57 @@ function DetailPanel({
           <MapPin className="h-3.5 w-3.5" />
           Zoom to location
         </button>
+
+        {/* Closest BMU distances */}
+        {live && (() => {
+          const located = bmus
+            .filter((b) => b.lat != null && b.lng != null)
+            .map((b) => ({
+              ...b,
+              distKm: haversineKm(live.lat, live.lng, b.lat!, b.lng!),
+            }))
+            .sort((a, b) => a.distKm - b.distKm);
+
+          if (located.length === 0) return null;
+          const nearest = located[0];
+
+          return (
+            <div className="rounded-lg border border-foam/10 bg-foam/[0.03] p-3 text-xs space-y-2">
+              <div className="text-[10px] uppercase tracking-wider text-foam/40 flex items-center gap-1.5">
+                <Anchor className="h-3 w-3" />
+                Nearest BMU
+              </div>
+              {/* Nearest highlighted */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-tide">{nearest.name}</div>
+                  {nearest.region && (
+                    <div className="text-[10px] text-foam/50">{nearest.region}</div>
+                  )}
+                </div>
+                <div className="text-right">
+                  <div className="font-mono font-semibold text-tide">
+                    {nearest.distKm < 1
+                      ? `${Math.round(nearest.distKm * 1000)} m`
+                      : `${nearest.distKm.toFixed(1)} km`}
+                  </div>
+                  <div className="text-[10px] text-foam/40">closest</div>
+                </div>
+              </div>
+              {/* Other BMUs */}
+              {located.slice(1, 4).map((b) => (
+                <div key={b.id} className="flex items-center justify-between text-foam/60">
+                  <span>{b.name}</span>
+                  <span className="font-mono">
+                    {b.distKm < 1
+                      ? `${Math.round(b.distKm * 1000)} m`
+                      : `${b.distKm.toFixed(1)} km`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {detailTrail.length > 0 && (
           <div className="flex items-center gap-2 text-[11px] text-foam/50 flex-wrap">

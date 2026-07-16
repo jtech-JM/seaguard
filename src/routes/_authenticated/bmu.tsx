@@ -22,6 +22,7 @@ import {
   Cpu,
   LifeBuoy,
   LogOut,
+  MapPin,
   Pencil,
   Plus,
   Radio,
@@ -102,10 +103,10 @@ function BMUDashboard() {
         .order("created_at", { ascending: false })
         .limit(100),
     ]);
-    setBMUs((bRes.data as BMU[]) ?? []);
-    setFishermen((fRes.data as Fisherman[]) ?? []);
+    setBMUs((bRes.data as unknown as BMU[]) ?? []);
+    setFishermen((fRes.data as unknown as Fisherman[]) ?? []);
     setBoats((boRes.data as Boat[]) ?? []);
-    setDevices((dRes.data as Device[]) ?? []);
+    setDevices((dRes.data as unknown as Device[]) ?? []);
     const tripRows = (tRes.data as SeaTrip[]) ?? [];
     setTrips(tripRows);
     setPendingCount(tripRows.filter((t) => t.status === "pending_approval").length);
@@ -1670,12 +1671,20 @@ function BMUsSection({
         }}
       />
       <Table
-        cols={["Name", "Region", "Phone", "Email", ""]}
+        cols={["Name", "Region", "Phone", "Email", "Location", ""]}
         rows={filtered.map((b) => [
           <span className="font-medium text-foreground">{b.name}</span>,
           b.region ?? "—",
           b.contact_phone ?? "—",
           b.contact_email ?? "—",
+          b.lat != null && b.lng != null ? (
+            <span className="inline-flex items-center gap-1 text-xs text-primary">
+              <MapPin className="h-3 w-3" />
+              {b.lat.toFixed(4)}, {b.lng.toFixed(4)}
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground/50">No location</span>
+          ),
           <RowActions
             onEdit={() => {
               setEditing(b);
@@ -1716,14 +1725,86 @@ function BMUModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [form, setForm] = useState<Partial<BMU>>(initial ?? { name: "" });
+  const [form, setForm] = useState<Partial<BMU>>(
+    initial ?? { name: "", region: "", contact_phone: "", contact_email: "", lat: null, lng: null },
+  );
   const [busy, setBusy] = useState(false);
+
+  // Map refs
+  const mapElRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<import("leaflet").Map | null>(null);
+  const markerRef = useRef<import("leaflet").Marker | null>(null);
+  const LRef = useRef<typeof import("leaflet") | null>(null);
+
+  // Boot Leaflet inside the modal
+  useEffect(() => {
+    let cancelled = false;
+    import("leaflet").then((mod) => {
+      if (cancelled || !mapElRef.current || mapRef.current) return;
+      const L = (mod.default ?? mod) as typeof import("leaflet");
+      LRef.current = L;
+
+      const initialLat = form.lat ?? -4.0435;
+      const initialLng = form.lng ?? 39.6682;
+
+      const map = L.map(mapElRef.current, { zoomControl: true, attributionControl: false }).setView(
+        [initialLat, initialLng],
+        form.lat != null ? 12 : 6,
+      );
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19 }).addTo(map);
+      mapRef.current = map;
+
+      // If editing an existing BMU with a location, place a pin
+      if (form.lat != null && form.lng != null) {
+        markerRef.current = L.marker([form.lat, form.lng], { draggable: true }).addTo(map);
+        markerRef.current.on("dragend", () => {
+          const pos = markerRef.current!.getLatLng();
+          setForm((f) => ({ ...f, lat: pos.lat, lng: pos.lng }));
+        });
+      }
+
+      // Click map to place / move pin
+      map.on("click", (e: import("leaflet").LeafletMouseEvent) => {
+        const { lat, lng } = e.latlng;
+        setForm((f) => ({ ...f, lat, lng }));
+        if (markerRef.current) {
+          markerRef.current.setLatLng([lat, lng]);
+        } else {
+          markerRef.current = L.marker([lat, lng], { draggable: true }).addTo(map);
+          markerRef.current.on("dragend", () => {
+            const pos = markerRef.current!.getLatLng();
+            setForm((f) => ({ ...f, lat: pos.lat, lng: pos.lng }));
+          });
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+      mapRef.current?.remove();
+      mapRef.current = null;
+      markerRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function save() {
+    if (!form.name?.trim()) {
+      window.alert("BMU name is required.");
+      return;
+    }
     setBusy(true);
     try {
+      const payload = {
+        name: form.name,
+        region: form.region || null,
+        contact_phone: form.contact_phone || null,
+        contact_email: form.contact_email || null,
+        lat: form.lat ?? null,
+        lng: form.lng ?? null,
+      };
       const { error } = initial
-        ? await supabase.from("bmus").update(form).eq("id", initial.id)
-        : await supabase.from("bmus").insert(form as Omit<BMU, "id">);
+        ? await supabase.from("bmus").update(payload as any).eq("id", initial.id)
+        : await supabase.from("bmus").insert(payload as any);
       if (error) {
         window.alert(error.message);
       } else {
@@ -1733,6 +1814,7 @@ function BMUModal({
       setBusy(false);
     }
   }
+
   return (
     <Modal title={initial ? "Edit BMU" : "New BMU"} onClose={onClose}>
       <ModalField label="Name">
@@ -1753,6 +1835,42 @@ function BMUModal({
           onChange={(v) => setForm({ ...form, contact_email: v })}
         />
       </ModalField>
+
+      {/* Map picker */}
+      <div>
+        <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+          Location — click map to place pin, drag to adjust
+        </span>
+        <div
+          ref={mapElRef}
+          className="mt-1 h-52 w-full rounded-xl border border-border overflow-hidden"
+        />
+        <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+          <MapPin className="h-3 w-3 text-primary shrink-0" />
+          {form.lat != null && form.lng != null ? (
+            <span>
+              <span className="font-mono">{form.lat.toFixed(5)}</span>,{" "}
+              <span className="font-mono">{form.lng.toFixed(5)}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setForm((f) => ({ ...f, lat: null, lng: null }));
+                  if (markerRef.current) {
+                    markerRef.current.remove();
+                    markerRef.current = null;
+                  }
+                }}
+                className="ml-2 text-destructive hover:underline"
+              >
+                Clear
+              </button>
+            </span>
+          ) : (
+            <span className="italic text-muted-foreground/60">No location set — click the map</span>
+          )}
+        </div>
+      </div>
+
       <ModalActions onClose={onClose} onSave={save} busy={busy} />
     </Modal>
   );

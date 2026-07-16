@@ -24,7 +24,7 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot" | "reset">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -36,6 +36,8 @@ function AuthPage() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
 
   useEffect(() => {
     // onAuthStateChange handles both an already-logged-in page load AND the
@@ -43,7 +45,13 @@ function AuthPage() {
     // condition where getSession() runs before Supabase processes the tokens.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        // User clicked the reset link — show the set-new-password form
+        setCheckingSession(false);
+        setMode("reset");
+        return;
+      }
       if (session) {
         await goHome(navigate);
       } else {
@@ -117,6 +125,26 @@ function AuthPage() {
     }
   }
 
+  async function handleSetNewPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    if (newPassword !== confirmPassword) {
+      setErr("Passwords do not match.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      // Password updated — sign them in and redirect home
+      await goHome(navigate);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // ── Full-page session check spinner ──────────────────────────────────────
   if (checkingSession) {
     return (
@@ -147,22 +175,77 @@ function AuthPage() {
 
       {/* Card */}
       <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1a2632] shadow-sm px-8 py-8">
-        {mode === "forgot" ? (
-          /* ── Forgot password ── */
+        {mode === "forgot" || mode === "reset" ? (
+          /* ── Forgot / Reset password ── */
           <>
             <div className="flex items-center gap-2 mb-1">
               <Anchor className="h-5 w-5 text-[#1a6b6b] dark:text-[#4ecdc4]" />
-              <h1 className="text-[22px] font-semibold text-gray-800 dark:text-white">Reset password</h1>
+              <h1 className="text-[22px] font-semibold text-gray-800 dark:text-white">
+                {mode === "reset" ? "Set new password" : "Reset password"}
+              </h1>
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-              Enter your email and we'll send you a link to set a new password. This also works if you previously signed in with Google.
+              {mode === "reset"
+                ? "Choose a strong new password for your account."
+                : "Enter your email and we'll send you a link to set a new password. This also works if you previously signed in with Google."}
             </p>
 
-            {resetSent ? (
+            {mode === "reset" ? (
+              /* Set new password form */
+              <form onSubmit={handleSetNewPassword} className="space-y-4">
+                <FloatingField
+                  id="newPassword"
+                  label="New password"
+                  type={showNewPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={setNewPassword}
+                  required
+                  suffix={
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onClick={() => setShowNewPassword((v) => !v)}
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
+                      aria-label={showNewPassword ? "Hide password" : "Show password"}
+                    >
+                      {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  }
+                />
+                <FloatingField
+                  id="newPasswordConfirm"
+                  label="Confirm new password"
+                  type={showNewPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={setConfirmPassword}
+                  required
+                  error={
+                    confirmPassword.length > 0 && newPassword !== confirmPassword
+                      ? "Passwords do not match"
+                      : undefined
+                  }
+                />
+                {err && (
+                  <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+                    {err}
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1a6b6b] hover:bg-[#155858] dark:bg-[#1a8080] dark:hover:bg-[#1a9090] py-3 text-sm font-semibold text-white transition disabled:opacity-60 mt-2"
+                >
+                  {loading && <Spinner className="h-4 w-4" />}
+                  Save new password
+                </button>
+              </form>
+            ) : resetSent ? (
+              /* Email sent confirmation */
               <div className="rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-500/30 px-4 py-4 text-sm text-green-700 dark:text-green-400">
                 Check your inbox — a password reset link is on its way to <strong>{email}</strong>.
               </div>
             ) : (
+              /* Request reset email form */
               <form onSubmit={handleForgotPassword} className="space-y-4">
                 <FloatingField
                   id="resetEmail"
@@ -188,14 +271,16 @@ function AuthPage() {
               </form>
             )}
 
-            <p className="mt-5 text-center text-sm text-gray-500 dark:text-gray-400">
-              <button
-                onClick={() => { setMode("signin"); setErr(null); setResetSent(false); }}
-                className="font-semibold text-[#1a6b6b] dark:text-[#4ecdc4] hover:underline"
-              >
-                ← Back to sign in
-              </button>
-            </p>
+            {mode !== "reset" && (
+              <p className="mt-5 text-center text-sm text-gray-500 dark:text-gray-400">
+                <button
+                  onClick={() => { setMode("signin"); setErr(null); setResetSent(false); }}
+                  className="font-semibold text-[#1a6b6b] dark:text-[#4ecdc4] hover:underline"
+                >
+                  ← Back to sign in
+                </button>
+              </p>
+            )}
           </>
         ) : (
           /* ── Sign in / Sign up ── */
