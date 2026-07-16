@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Anchor, LifeBuoy, Loader2 } from "lucide-react";
+import { Anchor, Eye, EyeOff } from "lucide-react";
 import { fetchPrimaryRole, ROLE_HOME } from "@/lib/use-role";
 import { ThemeToggleButton } from "@/lib/theme";
 
@@ -15,8 +15,8 @@ async function goHome(navigate: ReturnType<typeof useNavigate>) {
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Sign in — MarineRescue" },
-      { name: "description", content: "Sign in to the MarineRescue command center." },
+      { title: "Sign in — SEAGUARD" },
+      { name: "description", content: "Sign in to the SEAGUARD Marine Rescue Network." },
     ],
   }),
   component: AuthPage,
@@ -28,6 +28,7 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -70,12 +71,9 @@ function AuthPage() {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: {
-          redirectTo: window.location.origin + "/auth",
-        },
+        options: { redirectTo: window.location.origin + "/auth" },
       });
       if (error) throw error;
-      // browser will redirect — no further action needed here
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
       setLoading(false);
@@ -83,117 +81,228 @@ function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen bg-ocean text-foam grid place-items-center px-4 py-10">
-      <div className="w-full max-w-md">
-        <div className="flex items-center gap-2 mb-6">
-          <div className="grid h-8 w-8 place-items-center rounded-lg bg-foam/10 ring-1 ring-foam/15">
-            <LifeBuoy className="h-4 w-4 text-distress" />
+    <div className="min-h-screen bg-[#f5f5f5] dark:bg-[#0f1923] flex flex-col items-center justify-center px-4 py-10">
+      {/* Header */}
+      <div className="w-full max-w-md flex items-center gap-3 mb-6">
+        <CompassRose />
+        <div>
+          <div className="text-[15px] font-bold tracking-widest text-[#1a6b6b] dark:text-[#4ecdc4] uppercase">
+            SEAGUARD
           </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.2em] text-foam/50">SEAGUARD</div>
-            <div className="text-sm font-semibold">Marine Rescue Network</div>
-          </div>
-          <div className="ml-auto">
-            <ThemeToggleButton />
-          </div>
+          <div className="text-[13px] text-gray-500 dark:text-gray-400">Marine Rescue Network</div>
+        </div>
+        <div className="ml-auto">
+          <ThemeToggleButton />
+        </div>
+      </div>
+
+      {/* Card */}
+      <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-[#1a2632] shadow-sm px-8 py-8">
+        {/* Title */}
+        <div className="flex items-center gap-2 mb-1">
+          <Anchor className="h-5 w-5 text-[#1a6b6b] dark:text-[#4ecdc4]" />
+          <h1 className="text-[22px] font-semibold text-gray-800 dark:text-white">
+            {mode === "signin" ? "Sign in" : "Create account"}
+          </h1>
+        </div>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+          Access the rescue command dashboards and BMU registration portal.
+        </p>
+
+        {/* Google */}
+        <button
+          onClick={handleGoogle}
+          disabled={loading}
+          className="flex w-full items-center justify-center gap-3 rounded-xl border border-gray-300 dark:border-white/15 bg-white dark:bg-white/5 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 shadow-sm transition hover:bg-gray-50 dark:hover:bg-white/10 disabled:opacity-60"
+        >
+          <GoogleIcon />
+          {mode === "signin" ? "Sign in with Google" : "Sign up with Google"}
+        </button>
+
+        {/* Divider */}
+        <div className="my-5 flex items-center gap-3 text-[11px] uppercase tracking-widest text-gray-400">
+          <div className="h-px flex-1 bg-gray-200 dark:bg-white/10" />
+          or email
+          <div className="h-px flex-1 bg-gray-200 dark:bg-white/10" />
         </div>
 
-        <div className="mt-6 rounded-2xl border border-foam/10 bg-foam/[0.04] p-6">
-          <div className="flex items-center gap-2">
-            <Anchor className="h-4 w-4 text-tide" />
-            <h1 className="text-xl font-semibold">
-              {mode === "signin" ? "Sign in" : "Create account"}
-            </h1>
-          </div>
-          <p className="mt-1 text-sm text-foam/60">
-            Access the BMU registration and rescue command dashboards.
-          </p>
-
-          <button
-            onClick={handleGoogle}
-            disabled={loading}
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-foam/15 bg-foam/[0.06] px-4 py-2.5 text-sm font-medium text-foam transition hover:bg-foam/10 disabled:opacity-60"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4">
-              <path
-                fill="#fff"
-                d="M21.35 11.1H12v3.2h5.35c-.23 1.24-1.4 3.65-5.35 3.65-3.22 0-5.85-2.66-5.85-5.95s2.63-5.95 5.85-5.95c1.83 0 3.05.78 3.75 1.45l2.55-2.45C16.9 3.5 14.7 2.5 12 2.5 6.75 2.5 2.5 6.75 2.5 12s4.25 9.5 9.5 9.5c5.48 0 9.1-3.85 9.1-9.27 0-.62-.07-1.1-.25-1.13Z"
-              />
-            </svg>
-            Continue with Google
-          </button>
-
-          <div className="my-5 flex items-center gap-3 text-[11px] uppercase tracking-wider text-foam/40">
-            <div className="h-px flex-1 bg-foam/10" /> or email{" "}
-            <div className="h-px flex-1 bg-foam/10" />
-          </div>
-
-          <form onSubmit={handleEmail} className="space-y-3">
-            {mode === "signup" && (
-              <Field
-                label="Full name"
-                value={fullName}
-                onChange={setFullName}
-                type="text"
-                required
-              />
-            )}
-            <Field label="Email" value={email} onChange={setEmail} type="email" required />
-            <Field
-              label="Password"
-              value={password}
-              onChange={setPassword}
-              type="password"
+        {/* Form */}
+        <form onSubmit={handleEmail} className="space-y-4">
+          {mode === "signup" && (
+            <FloatingField
+              id="fullName"
+              label="Full name"
+              type="text"
+              value={fullName}
+              onChange={setFullName}
               required
             />
-            {err && (
-              <div className="rounded-lg bg-distress/15 px-3 py-2 text-xs text-distress">{err}</div>
-            )}
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-tide py-2.5 text-sm font-semibold text-ocean transition hover:bg-tide/90 disabled:opacity-60"
-            >
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === "signin" ? "Sign in" : "Create account"}
-            </button>
-          </form>
+          )}
+          <FloatingField
+            id="email"
+            label="Email"
+            type="email"
+            value={email}
+            onChange={setEmail}
+            required
+          />
+          <FloatingField
+            id="password"
+            label="Password"
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={setPassword}
+            required
+            suffix={
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={() => setShowPassword((v) => !v)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            }
+          />
+
+          {err && (
+            <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-500/30 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+              {err}
+            </div>
+          )}
 
           <button
-            onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-            className="mt-4 w-full text-center text-xs text-foam/60 hover:text-foam"
+            type="submit"
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1a6b6b] hover:bg-[#155858] dark:bg-[#1a8080] dark:hover:bg-[#1a9090] py-3 text-sm font-semibold text-white transition disabled:opacity-60 mt-2"
           >
-            {mode === "signin" ? "No account yet? Create one" : "Already registered? Sign in"}
+            {loading && (
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+            )}
+            {mode === "signin" ? "Sign In" : "Create account"}
           </button>
-        </div>
+        </form>
+
+        {/* Toggle mode */}
+        <p className="mt-5 text-center text-sm text-gray-500 dark:text-gray-400">
+          {mode === "signin" ? (
+            <>
+              No account yet?{" "}
+              <button
+                onClick={() => { setMode("signup"); setErr(null); }}
+                className="font-semibold text-[#1a6b6b] dark:text-[#4ecdc4] hover:underline"
+              >
+                Sign up now
+              </button>
+            </>
+          ) : (
+            <>
+              Already registered?{" "}
+              <button
+                onClick={() => { setMode("signin"); setErr(null); }}
+                className="font-semibold text-[#1a6b6b] dark:text-[#4ecdc4] hover:underline"
+              >
+                Sign in
+              </button>
+            </>
+          )}
+        </p>
       </div>
     </div>
   );
 }
 
-function Field({
+// ── Floating-label input ──────────────────────────────────────────────────────
+function FloatingField({
+  id,
   label,
+  type,
   value,
   onChange,
-  type,
   required,
+  suffix,
 }: {
+  id: string;
   label: string;
+  type: string;
   value: string;
   onChange: (v: string) => void;
-  type: string;
   required?: boolean;
+  suffix?: React.ReactNode;
 }) {
   return (
-    <label className="block">
-      <span className="text-[11px] uppercase tracking-wider text-foam/50">{label}</span>
-      <input
-        type={type}
-        value={value}
-        required={required}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-lg border border-foam/10 bg-ocean/40 px-3 py-2 text-sm text-foam outline-none focus:border-tide/60"
+    <div className="space-y-1">
+      <label
+        htmlFor={id}
+        className="block text-[11px] font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400"
+      >
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          id={id}
+          type={type}
+          value={value}
+          required={required}
+          placeholder={label}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 px-4 py-2.5 text-sm text-gray-800 dark:text-white placeholder:text-gray-300 dark:placeholder:text-white/20 outline-none focus:border-[#1a6b6b] dark:focus:border-[#4ecdc4] focus:ring-2 focus:ring-[#1a6b6b]/15 dark:focus:ring-[#4ecdc4]/15 transition pr-10"
+        />
+        {suffix && (
+          <div className="absolute inset-y-0 right-3 flex items-center">{suffix}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Compass rose SVG logo ─────────────────────────────────────────────────────
+function CompassRose() {
+  return (
+    <svg
+      width="40"
+      height="40"
+      viewBox="0 0 40 40"
+      fill="none"
+      className="shrink-0"
+      aria-hidden="true"
+    >
+      <circle cx="20" cy="20" r="19" stroke="#1a6b6b" strokeWidth="1.5" className="dark:stroke-[#4ecdc4]" />
+      {/* Cardinal points */}
+      <polygon points="20,4 22.5,18 20,16 17.5,18" fill="#1a6b6b" className="dark:fill-[#4ecdc4]" />
+      <polygon points="20,36 22.5,22 20,24 17.5,22" fill="#1a6b6b" fillOpacity="0.4" className="dark:fill-[#4ecdc4]" />
+      <polygon points="4,20 18,17.5 16,20 18,22.5" fill="#1a6b6b" fillOpacity="0.4" className="dark:fill-[#4ecdc4]" />
+      <polygon points="36,20 22,17.5 24,20 22,22.5" fill="#1a6b6b" className="dark:fill-[#4ecdc4]" />
+      {/* Center dot */}
+      <circle cx="20" cy="20" r="2.5" fill="#1a6b6b" className="dark:fill-[#4ecdc4]" />
+    </svg>
+  );
+}
+
+// ── Google "G" icon ───────────────────────────────────────────────────────────
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" aria-hidden="true">
+      <path
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+        fill="#4285F4"
       />
-    </label>
+      <path
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+        fill="#34A853"
+      />
+      <path
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"
+        fill="#FBBC05"
+      />
+      <path
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+        fill="#EA4335"
+      />
+    </svg>
   );
 }
