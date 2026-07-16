@@ -79,7 +79,6 @@ interface Profile {
 
 function BMUDashboard() {
   const navigate = useNavigate();
-  const { theme, setTheme } = useTheme();
   const [tab, setTab] = useState<Tab>("fishermen");
   const [filterOpen, setFilterOpen] = useState(false);
   const [bmus, setBMUs] = useState<BMU[]>([]);

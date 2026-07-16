@@ -11,6 +11,7 @@ import { requireRole, type RouteContext } from "@/lib/route-guard";
 import { getTripRequestBlockedReason } from "@/lib/trip-request";
 import { cancelSos, cancelTripRequest, checkInTrip, createTripRequest, triggerSos } from "@/lib/server-ops";
 import { Anchor, LogOut, Ship, Radio, LifeBuoy, LogIn, Users } from "lucide-react";
+import { ThemeToggleButton } from "@/lib/theme";
 
 export const Route = createFileRoute("/_authenticated/fisherman")({
   ssr: false,
@@ -399,12 +400,15 @@ function FishermanPortal() {
             <div className="text-sm font-semibold">{profile?.full_name ?? "Portal"}</div>
           </div>
         </div>
-        <button
-          onClick={signOut}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 text-xs hover:bg-foam/10"
-        >
-          <LogOut className="h-3.5 w-3.5" /> Sign out
-        </button>
+        <div className="flex items-center gap-2">
+          <ThemeToggleButton />
+          <button
+            onClick={signOut}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 text-xs hover:bg-foam/10"
+          >
+            <LogOut className="h-3.5 w-3.5" /> Sign out
+          </button>
+        </div>
       </header>
 
       <div className="mx-auto max-w-5xl px-6 py-8">

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { LogOut, Shield, UserCog, Link2, X } from "lucide-react";
 import type { AppRole } from "@/lib/use-role";
+import { ThemeToggleButton } from "@/lib/theme";
 import { requireRole, type RouteContext } from "@/lib/route-guard";
 import { linkProfileToFisherman, setUserRole } from "@/lib/admin-ops";
 
@@ -112,12 +113,15 @@ function AdminDashboard() {
             <div className="text-sm font-semibold">User & Role Management</div>
           </div>
         </div>
-        <button
-          onClick={signOut}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 text-xs hover:bg-foam/10"
-        >
-          <LogOut className="h-3.5 w-3.5" /> Sign out
-        </button>
+        <div className="flex items-center gap-2">
+          <ThemeToggleButton />
+          <button
+            onClick={signOut}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-foam/15 px-3 py-1.5 text-xs hover:bg-foam/10"
+          >
+            <LogOut className="h-3.5 w-3.5" /> Sign out
+          </button>
+        </div>
       </header>
 
       <div className="mx-auto max-w-6xl px-6 py-8">
