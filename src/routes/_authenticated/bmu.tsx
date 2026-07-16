@@ -1,11 +1,14 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useTheme } from "@/lib/theme";
+import { Sun, Moon } from "lucide-react";
 import type { BMU, Boat, Device, Fisherman, TripStatus } from "@/lib/marine-types";
 import { TRIP_STATUS_LABEL, TRIP_STATUS_TONE } from "@/lib/marine-types";
 import { requireRole, type RouteContext } from "@/lib/route-guard";
 import { canTransitionTripStatus } from "@/lib/trip-status";
 import { STAFF_ROLES } from "@/lib/use-role";
+
 import {
   manageBoat,
   manageCrewMember,
@@ -30,6 +33,12 @@ import {
   X,
   ClipboardList,
   Link2,
+  Filter,
+  TrendingUp,
+  Activity,
+  Ship as ShipIcon,
+  Cpu as CpuIcon,
+  Users as UsersIcon,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/bmu")({
@@ -71,7 +80,9 @@ interface Profile {
 
 function BMUDashboard() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("trips");
+  const { theme, setTheme } = useTheme();
+  const [tab, setTab] = useState<Tab>("fishermen");
+  const [filterOpen, setFilterOpen] = useState(false);
   const [bmus, setBMUs] = useState<BMU[]>([]);
   const [fishermen, setFishermen] = useState<Fisherman[]>([]);
   const [boats, setBoats] = useState<Boat[]>([]);
@@ -79,6 +90,7 @@ function BMUDashboard() {
   const [trips, setTrips] = useState<SeaTrip[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [q, setQ] = useState("");
+  const addHandlers = useRef<Record<string, (() => void) | undefined>>({});
 
   async function refresh() {
     const [bRes, fRes, boRes, dRes, tRes] = await Promise.all([
@@ -138,8 +150,16 @@ function BMUDashboard() {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            aria-label="Toggle theme"
+            title={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground shadow-sm transition-all duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            {theme === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+          </button>
+          <button
             onClick={signOut}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground shadow-sm transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <LogOut className="h-4 w-4" /> Sign out
           </button>
@@ -188,29 +208,87 @@ function BMUDashboard() {
       </div>
 
       <div className="mx-auto max-w-7xl px-6 py-6">
-        <div className="mb-6 flex items-center gap-2">
+        <div className="mb-6 flex flex-wrap items-center gap-2">
           <div className="relative w-full max-w-md">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search records…"
-              className="w-full rounded-lg border border-border bg-white py-2 pl-9 pr-3 text-sm text-foreground shadow-sm outline-none transition-colors duration-150 placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              className="w-full rounded-full border border-border bg-white py-2 pl-9 pr-3 text-sm text-foreground shadow-sm outline-none transition-colors duration-150 placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
             />
           </div>
+          <button
+            onClick={() => setFilterOpen((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3.5 py-2 text-sm font-medium text-muted-foreground shadow-sm transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <Filter className="h-4 w-4" /> Filter
+          </button>
+          <button
+            onClick={() => {
+              const ev = addHandlers[tab];
+              ev?.();
+            }}
+            className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors duration-150 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <Plus className="h-4 w-4" /> Add
+          </button>
         </div>
 
-        {tab === "trips" && <TripsSection items={trips} q={q} onChange={refresh} />}
-        {tab === "fishermen" && (
-          <FishermenSection items={fishermen} bmus={bmus} q={q} onChange={refresh} />
+        {filterOpen && (
+          <div className="mb-5 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-white p-3 shadow-sm">
+            <FilterChip label="Status" options={["Active", "Inactive"]} />
+            <FilterChip label="BMU" options={bmus.map((b) => b.name)} />
+            <FilterChip label="Captain" options={["Certified", "Crew only"]} />
+            <button
+              onClick={() => setFilterOpen(false)}
+              className="ml-auto inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" /> Close
+            </button>
+          </div>
         )}
-        {tab === "boats" && (
-          <BoatsSection items={boats} bmus={bmus} fishermen={fishermen} q={q} onChange={refresh} />
-        )}
-        {tab === "devices" && (
-          <DevicesSection items={devices} fishermen={fishermen} q={q} onChange={refresh} />
-        )}
-        {tab === "bmus" && <BMUsSection items={bmus} q={q} onChange={refresh} />}
+
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[1fr_20rem]">
+          <div className="min-w-0">
+            {tab === "trips" && <TripsSection items={trips} q={q} onChange={refresh} />}
+            {tab === "fishermen" && (
+              <FishermenSection
+                items={fishermen}
+                bmus={bmus}
+                q={q}
+                onChange={refresh}
+                addHandlers={addHandlers}
+              />
+            )}
+            {tab === "boats" && (
+              <BoatsSection
+                items={boats}
+                bmus={bmus}
+                fishermen={fishermen}
+                q={q}
+                onChange={refresh}
+                addHandlers={addHandlers}
+              />
+            )}
+            {tab === "devices" && (
+              <DevicesSection
+                items={devices}
+                fishermen={fishermen}
+                q={q}
+                onChange={refresh}
+                addHandlers={addHandlers}
+              />
+            )}
+            {tab === "bmus" && (
+              <BMUsSection items={bmus} q={q} onChange={refresh} addHandlers={addHandlers} />
+            )}
+          </div>
+
+          <aside className="lg:sticky lg:top-32 h-fit">
+            <AnalyticsSidebar fishermen={fishermen} boats={boats} devices={devices} trips={trips} />
+          </aside>
+        </div>
       </div>
     </div>
   );
@@ -238,9 +316,9 @@ function TabBtn({
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+      className={`inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
         active
-          ? "bg-white text-primary shadow-sm"
+          ? "bg-primary text-primary-foreground shadow-sm"
           : "bg-transparent text-muted-foreground hover:bg-accent hover:text-foreground"
       }`}
     >
@@ -592,11 +670,13 @@ function FishermenSection({
   bmus,
   q,
   onChange,
+  addHandlers,
 }: {
   items: Fisherman[];
   bmus: BMU[];
   q: string;
   onChange: () => void;
+  addHandlers: React.MutableRefObject<Record<string, (() => void) | undefined>>;
 }) {
   const [editing, setEditing] = useState<Fisherman | null>(null);
   const [open, setOpen] = useState(false);
@@ -605,6 +685,17 @@ function FishermenSection({
     [f.full_name, f.phone, f.national_id].join(" ").toLowerCase().includes(q.toLowerCase()),
   );
   const bmuName = (id: string | null) => bmus.find((b) => b.id === id)?.name ?? "—";
+
+  useEffect(() => {
+    const registry = addHandlers.current;
+    registry["fishermen"] = () => {
+      setEditing(null);
+      setOpen(true);
+    };
+    return () => {
+      delete registry["fishermen"];
+    };
+  });
 
   return (
     <>
@@ -1073,12 +1164,14 @@ function BoatsSection({
   fishermen,
   q,
   onChange,
+  addHandlers,
 }: {
   items: Boat[];
   bmus: BMU[];
   fishermen: Fisherman[];
   q: string;
   onChange: () => void;
+  addHandlers: React.MutableRefObject<Record<string, (() => void) | undefined>>;
 }) {
   const [editing, setEditing] = useState<Boat | null>(null);
   const [open, setOpen] = useState(false);
@@ -1087,6 +1180,16 @@ function BoatsSection({
   );
   const fishName = (id: string | null) => fishermen.find((f) => f.id === id)?.full_name ?? "—";
   const bmuName = (id: string | null) => bmus.find((b) => b.id === id)?.name ?? "—";
+  useEffect(() => {
+    const registry = addHandlers.current;
+    registry["boats"] = () => {
+      setEditing(null);
+      setOpen(true);
+    };
+    return () => {
+      delete registry["boats"];
+    };
+  });
   return (
     <>
       <SectionHeader
@@ -1236,11 +1339,13 @@ function DevicesSection({
   fishermen,
   q,
   onChange,
+  addHandlers,
 }: {
   items: Device[];
   fishermen: Fisherman[];
   q: string;
   onChange: () => void;
+  addHandlers: React.MutableRefObject<Record<string, (() => void) | undefined>>;
 }) {
   const [editing, setEditing] = useState<Device | null>(null);
   const [open, setOpen] = useState(false);
@@ -1248,6 +1353,16 @@ function DevicesSection({
   const fishermanName = (id: string | null) =>
     fishermen.find((f) => f.id === id)?.full_name ?? "Unassigned";
   const now = Date.now();
+  useEffect(() => {
+    const registry = addHandlers.current;
+    registry["devices"] = () => {
+      setEditing(null);
+      setOpen(true);
+    };
+    return () => {
+      delete registry["devices"];
+    };
+  });
   return (
     <>
       <SectionHeader
@@ -1529,12 +1644,32 @@ function DeviceModal({
 }
 
 // ──────────────────── BMUs ────────────────────
-function BMUsSection({ items, q, onChange }: { items: BMU[]; q: string; onChange: () => void }) {
+function BMUsSection({
+  items,
+  q,
+  onChange,
+  addHandlers,
+}: {
+  items: BMU[];
+  q: string;
+  onChange: () => void;
+  addHandlers: React.MutableRefObject<Record<string, (() => void) | undefined>>;
+}) {
   const [editing, setEditing] = useState<BMU | null>(null);
   const [open, setOpen] = useState(false);
   const filtered = items.filter((b) =>
     [b.name, b.region].join(" ").toLowerCase().includes(q.toLowerCase()),
   );
+  useEffect(() => {
+    const registry = addHandlers.current;
+    registry["bmus"] = () => {
+      setEditing(null);
+      setOpen(true);
+    };
+    return () => {
+      delete registry["bmus"];
+    };
+  });
   return (
     <>
       <SectionHeader
@@ -1634,6 +1769,178 @@ function BMUModal({
 }
 
 // ──────────────────── UI PRIMITIVES ────────────────────
+function FilterChip({ label, options }: { label: string; options: string[] }) {
+  const [value, setValue] = useState<string>("");
+  return (
+    <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background py-1 pl-3 pr-1.5 text-xs">
+      <span className="font-medium text-muted-foreground">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="rounded-full bg-muted px-2 py-1 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <option value="">All</option>
+        {options.map((o) => (
+          <option key={o} value={o} className="bg-white">
+            {o}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function Donut({
+  segments,
+  size = 132,
+  thickness = 16,
+  centerLabel,
+  centerValue,
+}: {
+  segments: { value: number; color: string; label: string }[];
+  size?: number;
+  thickness?: number;
+  centerLabel?: string;
+  centerValue?: string | number;
+}) {
+  const total = segments.reduce((s, x) => s + x.value, 0) || 1;
+  const radius = (size - thickness) / 2;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+  return (
+    <div className="relative grid place-items-center" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="var(--muted)"
+          strokeWidth={thickness}
+        />
+        {segments.map((s, i) => {
+          const len = (s.value / total) * circumference;
+          const dash = `${len} ${circumference - len}`;
+          const el = (
+            <circle
+              key={i}
+              cx={size / 2}
+              cy={size / 2}
+              r={radius}
+              fill="none"
+              stroke={s.color}
+              strokeWidth={thickness}
+              strokeDasharray={dash}
+              strokeDashoffset={-offset}
+              strokeLinecap="butt"
+            />
+          );
+          offset += len;
+          return el;
+        })}
+      </svg>
+      <div className="absolute inset-0 grid place-items-center text-center">
+        <div>
+          {centerValue !== undefined && (
+            <div className="text-2xl font-bold leading-none text-foreground">{centerValue}</div>
+          )}
+          {centerLabel && (
+            <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              {centerLabel}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsSidebar({
+  fishermen,
+  boats,
+  devices,
+  trips,
+}: {
+  fishermen: Fisherman[];
+  boats: Boat[];
+  devices: Device[];
+  trips: SeaTrip[];
+}) {
+  const activeFishermen = fishermen.filter((f) => f.active).length;
+  const activeDevices = devices.filter((d) => d.active).length;
+  const captains = fishermen.filter((f) => f.is_certified_captain).length;
+  const atSea = trips.filter((t) => t.status === "at_sea" || t.status === "sos").length;
+  const segments = [
+    { value: activeFishermen, color: "var(--tide)", label: "Active" },
+    {
+      value: fishermen.length - activeFishermen,
+      color: "var(--muted-foreground)",
+      label: "Inactive",
+    },
+    { value: captains, color: "var(--chart-2)", label: "Captains" },
+  ];
+
+  const metrics = [
+    {
+      label: "Registered Boats",
+      value: boats.length,
+      icon: <ShipIcon className="h-4 w-4" />,
+      tone: "text-primary",
+    },
+    {
+      label: "Active Devices",
+      value: activeDevices,
+      icon: <CpuIcon className="h-4 w-4" />,
+      tone: "text-tide",
+    },
+    {
+      label: "Trips At Sea",
+      value: atSea,
+      icon: <Activity className="h-4 w-4" />,
+      tone: "text-distress",
+    },
+    {
+      label: "Certified Captains",
+      value: captains,
+      icon: <UsersIcon className="h-4 w-4" />,
+      tone: "text-primary",
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-border bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-muted-foreground">
+          <TrendingUp className="h-3.5 w-3.5 text-primary" /> Fleet Overview
+        </div>
+        <div className="flex flex-col items-center">
+          <Donut segments={segments} centerValue={fishermen.length} centerLabel="Fishermen" />
+          <div className="mt-3 flex w-full justify-center gap-3 text-[11px]">
+            {segments.map((s, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
+                <span className="text-muted-foreground">{s.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {metrics.map((m, i) => (
+          <div key={i} className="rounded-xl border border-border bg-white p-3 shadow-sm">
+            <div className={`mb-1 ${m.tone}`}>{m.icon}</div>
+            <div className="text-xl font-bold leading-none text-foreground">{m.value}</div>
+            <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+              {m.label}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SectionHeader({ title, onAdd }: { title: string; onAdd?: () => void }) {
   return (
     <div className="mb-4 flex items-center justify-between">
@@ -1762,7 +2069,7 @@ function Modal({
 }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/40 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-2xl border border-border bg-white p-5 text-foreground shadow-xl">
+      <div className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl border border-border bg-white p-5 text-foreground shadow-xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-base font-semibold">{title}</h3>
           <button
@@ -1772,7 +2079,7 @@ function Modal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="space-y-3">{children}</div>
+        <div className="space-y-3 overflow-y-auto pr-1">{children}</div>
       </div>
     </div>
   );
@@ -1797,7 +2104,7 @@ function ModalActions({
   busy: boolean;
 }) {
   return (
-    <div className="mt-5 flex justify-end gap-2">
+    <div className="sticky bottom-0 -mx-1 mt-5 flex justify-end gap-2 bg-white px-1 pt-4">
       <button
         onClick={onClose}
         className="rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
