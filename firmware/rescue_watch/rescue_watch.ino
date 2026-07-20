@@ -32,7 +32,7 @@
 // ================================================================
 const char* DEVICE_ID     = "DEV-ABC123";           // from BMU console
 const char* DEVICE_SECRET = "YOUR_48_CHARACTER_SECRET_HERE";
-const char* HOST          = "your-domain.com";      // no https://
+const char* HOST          = "seaguardb.vercel.app"; // live Vercel host
 
 // ================================================================
 // PIN ASSIGNMENTS
@@ -324,39 +324,76 @@ bool gsmOpenBearer() {
   if (!atCmd("AT+SAPBR=3,1,\"CONTYPE\",\"GPRS\"", "OK")) return false;
   if (!atCmd("AT+SAPBR=3,1,\"APN\",\"internet\"",  "OK")) return false; // ← change APN
   if (!atCmd("AT+SAPBR=1,1", "OK", 10000))              return false;
+  if (!atCmd("AT+HTTPSSL=1", "OK"))                     return false;
   return true;
 }
 
 int httpPost(const char* path, const char* body) {
-  int  bodyLen = strlen(body);
-  char cmd[200];
+  int bodyLen = strlen(body);
+  char cmd[256];
 
   if (!atCmd("AT+HTTPINIT", "OK")) return 0;
 
-  snprintf(cmd, sizeof(cmd), "AT+HTTPPARA=\"CID\",1");
-  if (!atCmd(cmd, "OK")) { atCmd("AT+HTTPTERM", "OK"); return 0; }
-
-  snprintf(cmd, sizeof(cmd), "AT+HTTPPARA=\"URL\",\"http://%s%s\"", HOST, path);
-  if (!atCmd(cmd, "OK")) { atCmd("AT+HTTPTERM", "OK"); return 0; }
-
-  snprintf(cmd, sizeof(cmd),
-    "AT+HTTPPARA=\"USERDATA\",\"x-device-secret: %s\\r\\nContent-Type: application/json\"",
-    DEVICE_SECRET);
-  if (!atCmd(cmd, "OK")) { atCmd("AT+HTTPTERM", "OK"); return 0; }
-
-  snprintf(cmd, sizeof(cmd), "AT+HTTPDATA=%d,5000", bodyLen);
-  if (!atCmd(cmd, "DOWNLOAD")) { atCmd("AT+HTTPTERM", "OK"); return 0; }
-
-  gsmSerial.print(body);
-  delay(1000);
-
-  if (!atCmd("AT+HTTPACTION=1", "+HTTPACTION", 10000)) {
+  if (!atCmd("AT+HTTPPARA=\"CID\",1", "OK")) {
     atCmd("AT+HTTPTERM", "OK");
     return 0;
   }
 
+  snprintf(cmd, sizeof(cmd), "AT+HTTPPARA=\"URL\",\"https://%s%s\"", HOST, path);
+  if (!atCmd(cmd, "OK")) {
+    atCmd("AT+HTTPTERM", "OK");
+    return 0;
+  }
+
+  if (!atCmd("AT+HTTPPARA=\"CONTENT\",\"application/json\"", "OK")) {
+    atCmd("AT+HTTPTERM", "OK");
+    return 0;
+  }
+
+  snprintf(cmd, sizeof(cmd), "AT+HTTPPARA=\"USERDATA\",\"x-device-secret: %s\"", DEVICE_SECRET);
+  if (!atCmd(cmd, "OK")) {
+    atCmd("AT+HTTPTERM", "OK");
+    return 0;
+  }
+
+  snprintf(cmd, sizeof(cmd), "AT+HTTPDATA=%d,5000", bodyLen);
+  if (!atCmd(cmd, "DOWNLOAD")) {
+    atCmd("AT+HTTPTERM", "OK");
+    return 0;
+  }
+
+  gsmSerial.print(body);
+  delay(500);
+
+  gsmSerial.println("AT+HTTPACTION=1");
+
+  unsigned long start = millis();
+  String resp = "";
+  int statusCode = 0;
+
+  while (millis() - start < 30000) {
+    while (gsmSerial.available()) {
+      resp += (char)gsmSerial.read();
+    }
+
+    int actionIdx = resp.indexOf("+HTTPACTION:");
+    if (actionIdx != -1) {
+      int firstComma = resp.indexOf(",", actionIdx);
+      int secondComma = resp.indexOf(",", firstComma + 1);
+      if (firstComma != -1 && secondComma != -1) {
+        String codeStr = resp.substring(firstComma + 1, secondComma);
+        statusCode = codeStr.toInt();
+        break;
+      }
+    }
+    if (resp.indexOf("ERROR") != -1) break;
+  }
+
+  Serial.print("[GSM HTTPS POST] -> Status Code Received: ");
+  Serial.println(statusCode);
+
   atCmd("AT+HTTPTERM", "OK");
-  return 200;
+  return statusCode;
 }
 
 // ================================================================
