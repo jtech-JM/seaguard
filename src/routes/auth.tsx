@@ -61,10 +61,13 @@ function AuthPage() {
       }
       // Block the automatic redirect while the reset form is open
       if (recoveryMode) return;
+
+      // Always clear the initial session-check spinner. If a session exists
+      // we'll navigate away; otherwise the login form will render.
+      setCheckingSession(false);
+
       if (session) {
         await goHome(navigate);
-      } else {
-        setCheckingSession(false);
       }
     });
     return () => subscription.unsubscribe();
