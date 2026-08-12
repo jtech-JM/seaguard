@@ -152,6 +152,36 @@ export function timestampIsFresh(iso: string | undefined, now: Date) {
   return Math.abs(now.getTime() - t) <= TIMESTAMP_SKEW_TOLERANCE_MS;
 }
 
+/**
+ * Best available client address, used as the throttle key for unauthenticated
+ * traffic and recorded in the ingest audit log.
+ *
+ * `x-forwarded-for` is deliberately the last resort. It is a client-supplied
+ * header that proxies *append* to, so its leftmost entry is whatever the caller
+ * chose to put there — keying a rate limit on it lets an attacker mint a fresh
+ * budget per request just by varying the header. This deployment builds for
+ * Cloudflare (see vite.config.ts), where `cf-connecting-ip` is set by the edge
+ * and cannot be spoofed by the client; `x-real-ip` covers the other proxies.
+ *
+ * Only when neither trustworthy header is present do we fall back to the
+ * rightmost `x-forwarded-for` entry — the hop appended nearest to us, and so the
+ * least attacker-controlled part of the chain.
+ */
+export function clientIp(request: Request): string {
+  const trusted = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-real-ip");
+  if (trusted?.trim()) return trusted.trim();
+
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const hops = forwarded
+      .split(",")
+      .map((hop) => hop.trim())
+      .filter(Boolean);
+    if (hops.length > 0) return hops[hops.length - 1];
+  }
+  return "unknown";
+}
+
 function json(body: unknown, status: number, traceId: string) {
   return Response.json(body, {
     status,
@@ -258,7 +288,7 @@ async function handle<T extends { device_id: string; timestamp?: string; event_i
   },
 ) {
   const traceId = deps.newTraceId();
-  const sourceIp = (request.headers.get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
+  const sourceIp = clientIp(request);
   let deviceLabel: string | null = null;
 
   try {
