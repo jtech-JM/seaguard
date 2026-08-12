@@ -77,6 +77,15 @@ uint8_t consecutiveModemFailures = 0;
 bool gsmReady = false;
 uint32_t eventCounter = 0;
 
+#ifdef SEAGUARD_CA_CERT
+// Path the trust anchor is written to inside the modem's own filesystem.
+#ifndef SEAGUARD_CA_CERT_PATH
+#define SEAGUARD_CA_CERT_PATH "C:\\USER\\seaguard-ca.crt"
+#endif
+// Cleared on every modem (re)initialisation — a modem reset loses the file.
+bool caCertReady = false;
+#endif
+
 // Button
 int lastRawButton = HIGH;
 int stableButton = HIGH;
@@ -101,6 +110,7 @@ bool sendAt(const char* command, const char* expected, unsigned long timeoutMs);
 bool initGsm();
 bool bearerIsOpen();
 bool ensureBearer();
+bool ensureCaCert();
 int postJson(const char* path, const char* payload);
 void queueSos(const char* level);
 void serviceSos();
@@ -383,6 +393,11 @@ bool sendAt(const char* command, const char* expected, unsigned long timeoutMs) 
 bool initGsm() {
   sim800.listen();
   gsmReady = false;
+#ifdef SEAGUARD_CA_CERT
+  // The certificate lives in the modem's filesystem, which a reset clears, so
+  // reinstall it rather than trusting a flag that outlived the modem.
+  caCertReady = false;
+#endif
 
   if (!sendAt("AT", "OK", 3000)) {
     gpsSerial.listen();
@@ -450,6 +465,99 @@ bool ensureBearer() {
 }
 
 // ============================================================
+// MODEM: TLS TRUST ANCHOR
+// ============================================================
+//
+// AT+HTTPSSL=1 encrypts the session but does NOT authenticate the server: with
+// no trust anchor loaded the SIM800L accepts any certificate presented to it.
+// An attacker able to intercept the GPRS path can then terminate the TLS
+// session, read the device secret out of the request header, and use it to
+// forge /cancel against a live distress alert.
+//
+// Loading the deployment's CA closes that. It is opt-in at flash time because
+// the correct anchor depends on who issues the server's certificate, and a
+// wrong one takes the device off the air entirely:
+//
+//   * SEAGUARD_CA_CERT defined  -> the certificate is installed and every
+//     transmission is refused until that succeeds. Authenticated TLS.
+//   * SEAGUARD_CA_CERT absent   -> previous behaviour, plus a loud warning.
+//     Encrypted, unauthenticated, and MITM-able. Not fit for production.
+//
+// Note that the SIM800L's TLS stack is old; builds before firmware 1418B05 top
+// out at TLS 1.0 and will fail the handshake against a modern host regardless
+// of the trust anchor. See HARDWARE_INTEGRATION.md.
+
+#ifdef SEAGUARD_CA_CERT
+
+// Writes the CA to the modem filesystem and registers it as the trust anchor.
+// Returns false unless the modem explicitly confirms it was accepted.
+bool ensureCaCert() {
+  if (caCertReady) return true;
+
+  const char* pem = SEAGUARD_CA_CERT;
+  const size_t pemLength = strlen(pem);
+  if (pemLength == 0) {
+    Serial.println(F("[seaguard] SEAGUARD_CA_CERT is empty — refusing to transmit"));
+    return false;
+  }
+
+  char cmd[160];
+
+  // FSCREATE on an existing path answers ERROR; the following FSWRITE
+  // overwrites from offset 0 either way, so the result is not checked.
+  snprintf(cmd, sizeof(cmd), "AT+FSCREATE=%s", SEAGUARD_CA_CERT_PATH);
+  sendAt(cmd, "OK", 5000);
+
+  // AT+FSWRITE=<path>,<mode 0=overwrite>,<length>,<input timeout seconds>
+  snprintf(cmd, sizeof(cmd), "AT+FSWRITE=%s,0,%u,10", SEAGUARD_CA_CERT_PATH,
+           (unsigned)pemLength);
+  while (sim800.available()) sim800.read();
+  sim800.println(cmd);
+  if (!seaguard::parseWritePrompt(readUntil(">", 10000).c_str())) {
+    Serial.println(F("[seaguard] modem refused the CA write prompt"));
+    return false;
+  }
+  sim800.write((const uint8_t*)pem, pemLength);
+  if (readUntil("OK", 15000).indexOf("OK") == -1) {
+    Serial.println(F("[seaguard] CA certificate write failed"));
+    return false;
+  }
+
+  snprintf(cmd, sizeof(cmd), "AT+SSLSETCERT=\"%s\"", SEAGUARD_CA_CERT_PATH);
+  while (sim800.available()) sim800.read();
+  sim800.println(cmd);
+  // The result arrives as a URC after the command's own OK, so wait for it
+  // specifically rather than returning on the OK.
+  const int result = seaguard::parseSslSetCertResult(readUntil("+SSLSETCERT:", 10000).c_str());
+  if (result != 0) {
+    // -1 means the modem never reported a result. Unconfirmed is not accepted:
+    // continuing would mean claiming a verified channel we cannot demonstrate.
+    Serial.print(F("[seaguard] CA certificate rejected by the modem, result "));
+    Serial.println(result);
+    return false;
+  }
+
+  Serial.println(F("[seaguard] CA certificate installed — server identity will be verified"));
+  caCertReady = true;
+  return true;
+}
+
+#else  // SEAGUARD_CA_CERT not provided
+
+bool ensureCaCert() {
+  static bool warned = false;
+  if (!warned) {
+    warned = true;
+    Serial.println(F("[seaguard] WARNING: no SEAGUARD_CA_CERT — TLS is encrypted but the"));
+    Serial.println(F("[seaguard] server is NOT authenticated. Traffic can be intercepted"));
+    Serial.println(F("[seaguard] and the device secret captured. Do not deploy like this."));
+  }
+  return true;
+}
+
+#endif  // SEAGUARD_CA_CERT
+
+// ============================================================
 // MODEM: HTTP
 // ============================================================
 
@@ -481,6 +589,11 @@ int postJson(const char* path, const char* payload) {
       Serial.println(F("[seaguard] HTTPSSL rejected — modem firmware may not support TLS"));
       break;
     }
+
+    // Same reasoning one layer up: an encrypted session to an unverified peer
+    // is not a secure one, so a build that asks for a trust anchor does not
+    // transmit without it.
+    if (!ensureCaCert()) break;
 
     char cmd[256];
     snprintf(cmd, sizeof(cmd), "AT+HTTPPARA=\"URL\",\"https://%s%s\"", SEAGUARD_HOST, path);

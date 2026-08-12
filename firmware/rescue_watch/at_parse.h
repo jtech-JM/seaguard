@@ -81,6 +81,42 @@ inline bool parseRegistered(const char* response) {
   return *p == '1' || *p == '5';
 }
 
+// AT+SSLSETCERT reports whether the modem accepted a CA certificate, as
+// "+SSLSETCERT: <result>" where 0 means installed. A non-zero result means the
+// file was missing or could not be parsed as a certificate.
+//
+// Returns the reported result code, or -1 when the modem emitted no URC at all.
+// The caller must treat -1 as a failure: firmware builds differ in whether they
+// emit the URC, and an unconfirmed install cannot be assumed to have worked —
+// silently continuing would leave the session encrypted but unauthenticated,
+// which is exactly the state the certificate is there to prevent.
+inline int parseSslSetCertResult(const char* response) {
+  if (response == NULL) return -1;
+  const char* at = strstr(response, "+SSLSETCERT:");
+  if (at == NULL) return -1;
+
+  const char* p = at + 12;  // past "+SSLSETCERT:"
+  while (*p != '\0' && isspace((unsigned char)*p)) p++;
+
+  int result = 0;
+  int digits = 0;
+  while (*p != '\0' && isdigit((unsigned char)*p)) {
+    result = result * 10 + (*p - '0');
+    p++;
+    digits++;
+  }
+  if (digits == 0) return -1;
+  return result;
+}
+
+// True when the modem is ready to accept file contents after AT+FSWRITE. The
+// SIM800L answers with a ">" prompt, the same handshake AT+HTTPDATA uses.
+inline bool parseWritePrompt(const char* response) {
+  if (response == NULL) return false;
+  if (strstr(response, "ERROR") != NULL) return false;
+  return strchr(response, '>') != NULL;
+}
+
 // True when the modem reported a status that will not improve on retry:
 // the request reached the server and was refused on its merits.
 inline bool isPermanentRejection(int status) {

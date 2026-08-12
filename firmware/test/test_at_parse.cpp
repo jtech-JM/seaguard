@@ -79,6 +79,31 @@ int main() {
   expectBool("unsolicited mode 2, roaming", parseRegistered("+CREG: 2,5,\"1A2B\",\"3C4D\""), true);
   expectBool("no CREG URC", parseRegistered("OK"), false);
 
+  // ---- +SSLSETCERT -------------------------------------------------------
+  // 0 is the only outcome that means the trust anchor was installed. Everything
+  // else, including a missing URC, has to be treated as a failure — the device
+  // refuses to transmit rather than fall back to an unauthenticated session.
+  expectInt("CA accepted", parseSslSetCertResult("\r\nOK\r\n\r\n+SSLSETCERT: 0\r\n"), 0);
+  expectInt("CA accepted, no space", parseSslSetCertResult("+SSLSETCERT:0"), 0);
+  expectInt("CA rejected", parseSslSetCertResult("\r\n+SSLSETCERT: 1\r\n"), 1);
+  expectInt("CA error code 4", parseSslSetCertResult("+SSLSETCERT: 4"), 4);
+  // Bare OK: the command was understood but the modem never reported an
+  // outcome, so the install is unconfirmed and must not count as success.
+  expectInt("no result URC", parseSslSetCertResult("\r\nOK\r\n"), -1);
+  expectInt("modem error", parseSslSetCertResult("\r\nERROR\r\n"), -1);
+  expectInt("truncated URC", parseSslSetCertResult("+SSLSETCERT:"), -1);
+  expectInt("null response", parseSslSetCertResult(NULL), -1);
+
+  // ---- FSWRITE prompt ----------------------------------------------------
+  expectBool("write prompt", parseWritePrompt("\r\n> "), true);
+  expectBool("prompt after echo", parseWritePrompt("AT+FSWRITE=...\r\n>"), true);
+  expectBool("no prompt yet", parseWritePrompt("\r\n"), false);
+  // A modem that rejects the path answers ERROR; the '>' check must not race
+  // ahead of that and start streaming certificate bytes as AT commands.
+  expectBool("error not a prompt", parseWritePrompt("\r\nERROR\r\n"), false);
+  expectBool("error wins over prompt", parseWritePrompt("> \r\nERROR\r\n"), false);
+  expectBool("null response is not a prompt", parseWritePrompt(NULL), false);
+
   // ---- retry policy ------------------------------------------------------
   expectBool("200 accepted", isAccepted(200), true);
   expectBool("204 accepted", isAccepted(204), true);

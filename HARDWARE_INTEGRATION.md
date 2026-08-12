@@ -269,6 +269,35 @@ values in the sketch are placeholders, not a specification for any particular bo
 - The GPRS bearer is verified with `AT+SAPBR=2,1` rather than trusting `AT+SAPBR=1,1`
 - Three consecutive transport failures trigger a full `initGsm()` re-initialisation
 
+### TLS trust anchor
+
+`AT+HTTPSSL=1` encrypts the session but does **not** authenticate the server. With no
+trust anchor loaded the SIM800L accepts any certificate presented to it, so anyone able
+to intercept the GPRS path can terminate the TLS session, read the device secret out of
+the `x-device-secret` header, and use it to forge a `/cancel` against a live distress
+alert. Encryption alone does not protect the credential.
+
+Define `SEAGUARD_CA_CERT` in `secrets.h` with the PEM of the root CA that issued your
+server's certificate:
+
+```bash
+openssl s_client -showcerts -connect your-domain.com:443 </dev/null \
+  | awk '/BEGIN CERT/{c++} c' | openssl x509 -outform pem
+```
+
+The firmware writes it to the modem's filesystem (`AT+FSCREATE` / `AT+FSWRITE`) and
+registers it with `AT+SSLSETCERT`, then **refuses to transmit** unless the modem reports
+`+SSLSETCERT: 0`. A missing result URC counts as a failure: an install that cannot be
+confirmed is not one you can rely on. The anchor is reinstalled after every `initGsm()`,
+because a modem reset clears its filesystem.
+
+Leaving `SEAGUARD_CA_CERT` undefined keeps the previous behaviour — encrypted but
+unauthenticated — and prints a warning on every boot. That mode is for bench testing
+only; do not deploy on it.
+
+Take the anchor from the live server rather than guessing. A CA that does not match the
+chain fails the handshake and takes the device off the air completely.
+
 ### Known limitations
 
 - **The AT layer is blocking.** A modem transaction holds the main loop for up to
@@ -334,6 +363,7 @@ button electrical characteristics — those need a physical device.
 | Area                | Why it cannot be verified in software                            |
 | ------------------- | ----------------------------------------------------------------- |
 | SIM800L TLS         | Older modem firmware has no TLS 1.2; the platform requires it      |
+| CA certificate install | `AT+FSWRITE` / `AT+SSLSETCERT` behaviour varies by modem firmware |
 | Network registration| Depends on the SIM, carrier and local coverage                     |
 | GPRS bearer         | Carrier APN behaviour                                              |
 | GPS acquisition     | Antenna, sky view, cold-start time                                 |
@@ -345,6 +375,11 @@ button electrical characteristics — those need a physical device.
 firmware negotiate only TLS 1.0, which modern hosts reject. If `AT+HTTPSSL=1` succeeds
 but `AT+HTTPACTION` returns a 6xx code, the modem firmware is the problem — check the
 revision with `AT+CGMR` and update it, or terminate TLS at a proxy you control.
+
+The same applies to the trust anchor: if the serial log shows `CA certificate rejected by
+the modem` or `modem refused the CA write prompt`, the modem's filesystem or SSL commands
+differ from stock. Confirm `AT+FSCREATE`, `AT+FSWRITE` and `AT+SSLSETCERT` by hand over a
+serial console before assuming the certificate itself is at fault.
 
 ---
 
