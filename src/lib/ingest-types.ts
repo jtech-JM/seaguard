@@ -10,6 +10,22 @@
  * a retryable 503 rather than letting it surface as a permanent 4xx.
  */
 
+/**
+ * Raised by `createAlert` when the device's `event_id` is already recorded
+ * against an alert — the unique index added in 20260812000000 firing.
+ *
+ * This is the idempotency check losing a race, not a fault: two retries of the
+ * same SOS both looked up the event id, both missed, and both inserted. The
+ * core treats it as the duplicate it is rather than as a storage failure, so the
+ * device gets the existing alert instead of a 503.
+ */
+export class DuplicateEventError extends Error {
+  constructor(readonly eventId: string) {
+    super(`alert already exists for event ${eventId}`);
+    this.name = "DuplicateEventError";
+  }
+}
+
 export interface DeviceRecord {
   /** `devices.id` (uuid) — the foreign key used by alerts and GPS logs. */
   id: string;

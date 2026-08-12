@@ -21,6 +21,7 @@
  */
 import { z } from "zod";
 import type { DeviceRecord, IngestStore, OpenAlertRecord } from "@/lib/ingest-types";
+import { DuplicateEventError } from "@/lib/ingest-types";
 
 export const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -390,19 +391,36 @@ export function handleSos(deps: IngestDeps, request: Request, sha256: (s: string
             ? await deps.store.resolveAlertOwner(device.fishermanId)
             : { bmuId: null, boatId: null };
 
-          const created = await deps.store.createAlert({
-            deviceUuid: device.id,
-            fishermanId: device.fishermanId,
-            bmuId: owner.bmuId,
-            boatId: owner.boatId,
-            ...position,
-            battery: body.battery ?? null,
-            level: body.level ?? null,
-            eventId: body.event_id ?? null,
-            notes: fix ? null : "Triggered without a GPS fix — position pending",
-            pingedAt: nowIso,
-          });
-          alertId = created.id;
+          try {
+            const created = await deps.store.createAlert({
+              deviceUuid: device.id,
+              fishermanId: device.fishermanId,
+              bmuId: owner.bmuId,
+              boatId: owner.boatId,
+              ...position,
+              battery: body.battery ?? null,
+              level: body.level ?? null,
+              eventId: body.event_id ?? null,
+              notes: fix ? null : "Triggered without a GPS fix — position pending",
+              pingedAt: nowIso,
+            });
+            alertId = created.id;
+          } catch (e) {
+            // Step 1's lookup and this insert are not one transaction, so two
+            // retries of the same SOS can both miss and both insert. The unique
+            // index catches the loser; resolve to the alert the winner created
+            // instead of answering 503 and making the device retry again.
+            if (!(e instanceof DuplicateEventError) || !body.event_id) throw e;
+            const winner = await deps.store.findAlertByEventId(device.id, body.event_id);
+            if (!winner) throw e;
+            await deps.store.touchDevice(device.id, nowIso);
+            return {
+              alert_id: winner.id,
+              received_at: nowIso,
+              duplicate: true,
+              trace_id: traceId,
+            };
+          }
         }
 
         if (fix) {

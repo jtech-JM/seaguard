@@ -21,6 +21,7 @@ import type {
   IngestStore,
   OpenAlertRecord,
 } from "@/lib/ingest-types";
+import { DuplicateEventError } from "@/lib/ingest-types";
 import { OPEN_ALERT_STATUSES } from "@/lib/ingest-core";
 
 type Row = Record<string, unknown>;
@@ -39,6 +40,16 @@ function assertOk(result: QueryResult, what: string) {
       ? String((result.error as { message: unknown }).message)
       : String(result.error);
   throw new Error(`${what}: ${message}`);
+}
+
+/** PostgREST surfaces a unique-constraint violation as SQLSTATE 23505. */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    String((error as { code: unknown }).code) === "23505"
+  );
 }
 
 function oneRow(result: QueryResult, what: string): Row | null {
@@ -148,28 +159,35 @@ export function createSupabaseIngestStore(db: Db): IngestStore {
     },
 
     async createAlert(input: CreateAlertInput) {
-      const row = oneRow(
-        await db
-          .from("sos_alerts")
-          .insert({
-            device_id: input.deviceUuid,
-            boat_id: input.boatId,
-            fisherman_id: input.fishermanId,
-            bmu_id: input.bmuId,
-            status: "new",
-            last_lat: input.lat,
-            last_lng: input.lng,
-            last_accuracy: input.accuracy,
-            last_ping_at: input.pingedAt,
-            battery: input.battery,
-            emergency_level: input.level,
-            ingest_event_id: input.eventId,
-            notes: input.notes,
-          })
-          .select("id")
-          .single(),
-        "alert insert",
-      );
+      const result = await db
+        .from("sos_alerts")
+        .insert({
+          device_id: input.deviceUuid,
+          boat_id: input.boatId,
+          fisherman_id: input.fishermanId,
+          bmu_id: input.bmuId,
+          status: "new",
+          last_lat: input.lat,
+          last_lng: input.lng,
+          last_accuracy: input.accuracy,
+          last_ping_at: input.pingedAt,
+          battery: input.battery,
+          emergency_level: input.level,
+          ingest_event_id: input.eventId,
+          notes: input.notes,
+        })
+        .select("id")
+        .single();
+
+      // 23505 on this insert means the (device_id, ingest_event_id) unique index
+      // rejected it: a concurrent retry of the same SOS inserted first. That is
+      // the idempotency guard working, not a storage fault, so it is reported as
+      // a duplicate rather than left to surface as a 503.
+      if (input.eventId && isUniqueViolation(result.error)) {
+        throw new DuplicateEventError(input.eventId);
+      }
+
+      const row = oneRow(result, "alert insert");
       if (!row) throw new Error("alert insert: no row returned");
       return { id: requiredStr(row, "id", "alert insert") };
     },

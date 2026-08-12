@@ -155,6 +155,43 @@ test("replayed event_id returns the original alert after it was closed", async (
   assert.equal(state.alerts.length, 1, "a lost response must not reopen a closed incident");
 });
 
+test("an event_id that loses the insert race resolves to the winner, not a 503", async () => {
+  const { deps, state, secret } = setup();
+
+  // Two retries of one SOS arrive together: both look up the event id, both
+  // miss, both insert. Modelled by blinding only the first lookup — the second
+  // request then hits the unique index the way the database enforces it.
+  const realLookup = deps.store.findAlertByEventId.bind(deps.store);
+  let lookups = 0;
+  deps.store.findAlertByEventId = async (deviceUuid, eventId) =>
+    ++lookups === 1 ? null : realLookup(deviceUuid, eventId);
+
+  // The winner's row is already committed when the loser tries to insert.
+  const winner = await (await sos(deps, { ...VALID, event_id: "evt-race" }, secret)).json();
+  assert.equal(lookups, 1, "the winner's own lookup is the one that was blinded");
+
+  const loser = await sos(deps, { ...VALID, event_id: "evt-race" }, secret);
+  const body = await loser.json();
+
+  assert.equal(loser.status, 200, "losing the race is not a server fault");
+  assert.equal(body.alert_id, winner.alert_id, "both retries must land on one incident");
+  assert.equal(body.duplicate, true);
+  assert.equal(state.alerts.length, 1, "the race must not open a second incident");
+});
+
+test("a genuine storage failure during create is still a retryable 503", async () => {
+  const { deps, secret } = setup();
+  deps.store.createAlert = async () => {
+    throw new Error("connection reset");
+  };
+  const response = await sos(deps, { ...VALID, event_id: "evt-boom" }, secret);
+  assert.equal(
+    response.status,
+    503,
+    "a real fault must stay retryable, not be read as a duplicate",
+  );
+});
+
 test("escalation needs a fresh event_id — a reused one is a no-op", async () => {
   const { deps, state, secret } = setup();
   await sos(deps, { ...VALID, level: "LOW", event_id: "press-1" }, secret);

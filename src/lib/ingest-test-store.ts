@@ -16,6 +16,7 @@ import type {
   IngestStore,
   OpenAlertRecord,
 } from "@/lib/ingest-types";
+import { DuplicateEventError } from "@/lib/ingest-types";
 import { OPEN_ALERT_STATUSES } from "@/lib/ingest-core";
 
 export function sha256Hex(value: string) {
@@ -101,6 +102,14 @@ export function createFakeStore(seed?: Partial<FakeStoreState>) {
     },
     async createAlert(input: CreateAlertInput) {
       guard("createAlert");
+      // Mirrors the uq_sos_alerts_device_event unique index, so the race the
+      // real database can lose is reproducible here.
+      if (
+        input.eventId &&
+        state.alerts.some((a) => a.deviceUuid === input.deviceUuid && a.eventId === input.eventId)
+      ) {
+        throw new DuplicateEventError(input.eventId);
+      }
       const alert: FakeAlert = {
         id: `alert-${nextId++}`,
         deviceUuid: input.deviceUuid,
