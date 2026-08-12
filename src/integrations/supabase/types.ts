@@ -92,9 +92,9 @@ export type Database = {
           assigned_at: string | null;
           created_at: string;
           device_id: string;
-          // Plaintext + hash are revoked from the `authenticated` role; only the
-          // service-role client can read them.
-          device_secret: string;
+          // The plaintext column was dropped in 20260812010000. The hash is
+          // outside the per-column SELECT grant, so only the service-role
+          // client can read it.
           device_secret_hash: string | null;
           device_secret_rotated_at: string | null;
           fisherman_id: string | null;
@@ -108,7 +108,6 @@ export type Database = {
           assigned_at?: string | null;
           created_at?: string;
           device_id: string;
-          device_secret?: string;
           device_secret_hash?: string | null;
           device_secret_rotated_at?: string | null;
           fisherman_id?: string | null;
@@ -122,7 +121,6 @@ export type Database = {
           assigned_at?: string | null;
           created_at?: string;
           device_id?: string;
-          device_secret?: string;
           device_secret_hash?: string | null;
           device_secret_rotated_at?: string | null;
           fisherman_id?: string | null;

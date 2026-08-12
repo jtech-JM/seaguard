@@ -55,10 +55,14 @@ export interface Boat {
   bmu_id: string | null;
 }
 
-// `device_secret` is deliberately absent: the column is revoked from the
-// `authenticated` role, so browser clients cannot read it. The plaintext secret
-// is returned exactly once, by manage_bmu_device('create') or by
+// `device_secret` is deliberately absent: the plaintext column no longer exists
+// (20260812010000), and `device_secret_hash` is excluded from the per-column
+// SELECT grant, so browser clients can read neither. The plaintext secret is
+// returned exactly once, by manage_bmu_device('create') or by
 // rotate_bmu_device_secret().
+//
+// Queries against `devices` must name their columns — `select("*")` fails for
+// the `authenticated` role now that the table-level grant is gone.
 export interface Device {
   id: string;
   device_id: string;
