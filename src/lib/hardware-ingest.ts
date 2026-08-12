@@ -1,40 +1,46 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 30;
-const REPLAY_GRACE_MS = 5_000;
 
 const rateLimitStore = new Map<string, { count: number; windowStart: number }>();
 
+/** Device secrets are stored as SHA-256 hex digests; this derives the digest to compare. */
 export function hashDeviceSecret(secret: string) {
-  return createHash("sha256").update(secret).digest("hex");
+  return createHash("sha256").update(secret, "utf8").digest("hex");
 }
 
-export function timingSafeEq(a: string, b: string) {
-  if (a.length !== b.length) return false;
-  let out = 0;
-  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return out === 0;
+export function newTraceId() {
+  return randomUUID();
 }
 
-export function checkRateLimit(key: string, limit = DEFAULT_RATE_LIMIT_MAX_REQUESTS, windowMs = DEFAULT_RATE_LIMIT_WINDOW_MS) {
+/**
+ * Best-effort in-process request throttle.
+ *
+ * IMPORTANT: this is per serverless instance, not global. On Vercel each cold
+ * instance starts with an empty map and concurrent instances do not share
+ * counters, so it bounds a single misbehaving connection but is NOT a defence
+ * against a distributed flood. The real access control on these endpoints is the
+ * per-device secret; durable throttling would need a shared store (see
+ * DASHBOARD_FIX_TODO.md, Priority 2).
+ */
+export function checkRateLimit(
+  key: string,
+  limit = DEFAULT_RATE_LIMIT_MAX_REQUESTS,
+  windowMs = DEFAULT_RATE_LIMIT_WINDOW_MS,
+) {
   const now = Date.now();
   const entry = rateLimitStore.get(key);
   if (!entry || now - entry.windowStart >= windowMs) {
     rateLimitStore.set(key, { count: 1, windowStart: now });
     return true;
   }
-  if (entry.count >= limit) {
-    return false;
-  }
+  if (entry.count >= limit) return false;
   entry.count += 1;
   return true;
 }
 
-export function isReplayAttempt(previousNonce: string | null, previousTimestamp: string | null, nonce: string, timestamp: string) {
-  if (!previousNonce || !previousTimestamp) return false;
-  const prevTime = new Date(previousTimestamp).getTime();
-  if (Number.isNaN(prevTime)) return false;
-  const now = Date.now();
-  return previousNonce === nonce && now - prevTime <= REPLAY_GRACE_MS;
+/** Test seam — the limiter is module-level state shared across requests. */
+export function resetRateLimits() {
+  rateLimitStore.clear();
 }

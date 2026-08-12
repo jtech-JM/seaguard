@@ -100,6 +100,20 @@ export async function manageDevice(input: {
   );
 }
 
+/**
+ * Issues a fresh device secret and returns the plaintext once.
+ *
+ * The old secret stops working the moment this returns, so the device must be
+ * re-flashed. This is the remediation path for a leaked credential — including
+ * one that reached version control.
+ */
+export async function rotateDeviceSecret(deviceUuid: string, reason: string) {
+  return (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<RpcResult<{ id: string; device_id: string; device_secret: string }>>)(
+    "rotate_bmu_device_secret",
+    { p_id: deviceUuid, p_reason: reason },
+  );
+}
+
 export async function manageCrewMember(input: {
   action: "add" | "remove";
   tripId: string;

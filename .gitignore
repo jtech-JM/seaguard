@@ -21,6 +21,10 @@ dist-ssr
 .env.*
 !.env.example
 
+# Per-device firmware credentials — flash-time only, never committed.
+# Copy firmware/rescue_watch/secrets.example.h to secrets.h and fill it in.
+firmware/**/secrets.h
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars

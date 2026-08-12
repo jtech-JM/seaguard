@@ -55,14 +55,18 @@ export interface Boat {
   bmu_id: string | null;
 }
 
+// `device_secret` is deliberately absent: the column is revoked from the
+// `authenticated` role, so browser clients cannot read it. The plaintext secret
+// is returned exactly once, by manage_bmu_device('create') or by
+// rotate_bmu_device_secret().
 export interface Device {
   id: string;
   device_id: string;
-  device_secret: string;
   fisherman_id: string | null;
   hardware_type: string | null;
   active: boolean;
   last_seen_at: string | null;
+  device_secret_rotated_at: string | null;
 }
 
 export interface SOSAlertRow {
