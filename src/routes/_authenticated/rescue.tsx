@@ -166,19 +166,32 @@ function RescueDashboard() {
       .select("id", { count: "exact", head: true })
       .eq("status", "at_sea")
       .lt("expected_return", nowIso);
-    // Count devices seen in the last 15 min.
-    // Use fishermen!inner so devices assigned directly to a fisherman
-    // (no boat) are still counted. Fall back to a boat-join if fisherman_id
-    // is null by running two queries and summing.
-    let onlineQ = supabase
-      .from("devices")
-      .select("id, fishermen!inner(bmu_id)", { count: "exact", head: true })
-      .gte("last_seen_at", cutoff);
-    let onlineNoFishermanQ = supabase
-      .from("devices")
-      .select("id, boats!inner(bmu_id)", { count: "exact", head: true })
-      .gte("last_seen_at", cutoff)
-      .is("fisherman_id", null);
+    // Devices seen in the last 15 minutes.
+    //
+    // This used to run a second query joining devices to boats, to pick up
+    // devices with no fisherman assigned. That join has been dead since
+    // 20260715000001 dropped devices.boat_id: PostgREST cannot resolve a
+    // relationship that no longer exists, so the query errored, its count came
+    // back null, and it contributed zero to the total — silently, because the
+    // result is never checked for an error.
+    //
+    // Unfiltered, no join is needed at all: count every device that reported.
+    // That now includes unassigned devices, which the broken second query was
+    // supposed to cover and never did.
+    //
+    // Scoped to a BMU, the fisherman join is the only route from a device to a
+    // BMU. A device with no fisherman cannot be attributed to one, so it is left
+    // out of a scoped count rather than attributed arbitrarily.
+    const onlineQ = bmuId
+      ? supabase
+          .from("devices")
+          .select("id, fishermen!inner(bmu_id)", { count: "exact", head: true })
+          .gte("last_seen_at", cutoff)
+          .eq("fishermen.bmu_id", bmuId)
+      : supabase
+          .from("devices")
+          .select("id", { count: "exact", head: true })
+          .gte("last_seen_at", cutoff);
     let rescuesQ = supabase
       .from("rescue_operations")
       .select("id, alert:alert_id!inner(bmu_id)", { count: "exact", head: true })
@@ -187,23 +200,31 @@ function RescueDashboard() {
     if (bmuId) {
       tripsQ = tripsQ.eq("bmu_id", bmuId);
       overdueQ = overdueQ.eq("bmu_id", bmuId);
-      onlineQ = onlineQ.eq("fishermen.bmu_id", bmuId);
-      onlineNoFishermanQ = onlineNoFishermanQ.eq("boats.bmu_id", bmuId);
       rescuesQ = rescuesQ.eq("alert.bmu_id", bmuId);
     }
 
-    const [atSea, overdue, online, onlineNF, rescues] = await Promise.all([
+    const [atSea, overdue, online, rescues] = await Promise.all([
       tripsQ,
       overdueQ,
       onlineQ,
-      onlineNoFishermanQ,
       rescuesQ,
     ]);
+
+    // A failed count reads as 0, which is indistinguishable from "none online" —
+    // exactly how the dead boats join hid itself. Say so in the console instead.
+    for (const [label, result] of [
+      ["boats at sea", atSea],
+      ["overdue", overdue],
+      ["devices online", online],
+      ["active rescues", rescues],
+    ] as const) {
+      if (result.error) console.error(`[rescue] ${label} count failed:`, result.error.message);
+    }
 
     setStats({
       boatsAtSea: atSea.count ?? 0,
       overdue: overdue.count ?? 0,
-      devicesOnline: (online.count ?? 0) + (onlineNF.count ?? 0),
+      devicesOnline: online.count ?? 0,
       activeRescues: rescues.count ?? 0,
     });
   }
