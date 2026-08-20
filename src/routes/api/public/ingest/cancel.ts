@@ -1,5 +1,8 @@
-// Cancels any open SOS for a device (hardware "safe" button).
+// Cancels any open SOS for a device (hardware "safe"/cancel action).
 // Auth: header `x-device-secret: <secret>`.
+// Body: { device_id, reason?, event_id?, timestamp? }
+//
+// Request handling lives in `@/lib/ingest-core`.
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { buildRescueOperationPatch, buildSosCancelPatch, shouldRestoreTripStatus } from "@/lib/sos-cancel";

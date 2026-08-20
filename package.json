@@ -9,6 +9,10 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "test": "node scripts/run-tests.mjs && node scripts/run-firmware-tests.mjs",
+    "test:app": "node scripts/run-tests.mjs",
+    "test:firmware": "node scripts/run-firmware-tests.mjs",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --write ."
   },
   "dependencies": {
@@ -87,5 +91,8 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "^8.0.16"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
   }
 }

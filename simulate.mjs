@@ -2,8 +2,11 @@
 /**
  * SEAGUARD — Hardware Device Simulator
  *
- * Simulates an ESP32 SOS device by calling the real ingest API endpoints.
- * Use this to test the rescue dashboard without physical hardware.
+ * Simulates an ESP8266 + SIM800L SOS device by calling the real ingest API
+ * endpoints. Use this to test the rescue dashboard without physical hardware.
+ *
+ * It exercises the API and database exactly as the firmware does, but proves
+ * nothing about the modem, TLS or GPS — see HARDWARE_INTEGRATION.md.
  *
  * Usage:
  *   node simulate.mjs                        # interactive menu
@@ -13,6 +16,7 @@
  *   node simulate.mjs cancel                 # cancel open alert
  *   node simulate.mjs loop [interval_s]      # loop location pings (default 15s)
  *   node simulate.mjs scenario               # full scenario: sos → loop → cancel
+ *   node simulate.mjs check                  # assert the device → API → DB pipeline
  *
  * Configuration:
  *   Set env vars or edit the CONFIG block below.
@@ -86,12 +90,25 @@ async function post(path, body) {
     json = { raw: text };
   }
 
-  if (res.ok) {
-    return json;
-  } else {
-    log("✗", `HTTP ${res.status}: ${json.error ?? text}`, C.red);
-    return null;
-  }
+  // Every ingest response carries a trace id that also lands in the server log
+  // and in ingest_request_logs — quote it when reporting a problem.
+  const trace = res.headers.get("x-seaguard-trace");
+  if (res.ok) return json;
+
+  const retryable = res.status >= 500 || res.status === 429;
+  log(
+    "✗",
+    `HTTP ${res.status}: ${json.error ?? text}  [trace ${trace ?? "?"}]  ` +
+      (retryable ? "(retryable — firmware would back off)" : "(permanent — firmware would stop)"),
+    C.red,
+  );
+  return null;
+}
+
+/** Mirrors the firmware's idempotency key: stable across retries of one press. */
+let eventSeq = 0;
+function newEventId() {
+  return `sim-${process.pid.toString(16)}-${Date.now()}-${++eventSeq}`;
 }
 
 // ─── GPS DRIFT ────────────────────────────────────────────────────
@@ -102,18 +119,25 @@ function drift() {
 }
 
 // ─── ACTIONS ─────────────────────────────────────────────────────
-async function sendSOS(level = "LOW") {
-  log("🆘", `Sending SOS (level=${level})  lat=${lat.toFixed(5)} lng=${lng.toFixed(5)}`, C.red);
+async function sendSOS(level = "LOW", opts = {}) {
+  const { gpsFix = true, eventId = newEventId() } = opts;
+  log(
+    "🆘",
+    gpsFix
+      ? `Sending SOS (level=${level})  lat=${lat.toFixed(5)} lng=${lng.toFixed(5)}`
+      : `Sending SOS (level=${level})  NO GPS FIX`,
+    C.red,
+  );
   const res = await post("/api/public/ingest/sos", {
     device_id: CONFIG.deviceId,
-    lat,
-    lng,
-    accuracy: CONFIG.accuracy,
+    ...(gpsFix ? { lat, lng, accuracy: CONFIG.accuracy } : { gps_fix: false }),
     battery: Math.round(bat),
     level,
+    event_id: eventId,
   });
   if (res) {
-    log("✓", `Alert created — id: ${C.bold}${res.alert_id}${C.reset}`, C.green);
+    const note = res.duplicate ? " (deduplicated onto the open incident)" : "";
+    log("✓", `Alert ${C.bold}${res.alert_id}${C.reset}  gps_fix=${res.gps_fix}${note}`, C.green);
     return res.alert_id;
   }
   return null;
@@ -142,8 +166,16 @@ async function sendCancel() {
   log("🟢", "Sending cancel…", C.yellow);
   const res = await post("/api/public/ingest/cancel", {
     device_id: CONFIG.deviceId,
+    reason: "Simulated false alarm",
   });
-  if (res) log("✓", "Alert cancelled", C.green);
+  if (res) {
+    log(
+      "✓",
+      `Cancelled ${res.cancelled} alert(s)` +
+        (res.notified_rescue ? `, notified rescue on ${res.notified_rescue}` : ""),
+      C.green,
+    );
+  }
 }
 
 // ─── LOOP ────────────────────────────────────────────────────────
@@ -159,6 +191,65 @@ async function loopLocation(intervalMs = 15000, count = Infinity) {
     i++;
     if (i < count) await sleep(intervalMs);
   }
+}
+
+// ─── PIPELINE CHECK ──────────────────────────────────────────────
+// Exercises the behaviours that were broken, in order, against a running
+// server. Each step prints what it proves so a failure is self-explaining.
+async function pipelineCheck() {
+  console.log(`\n${C.bold}${C.cyan}=== SEAGUARD Pipeline Check ===${C.reset}\n`);
+  log("ℹ", `Device: ${CONFIG.deviceId}  →  ${CONFIG.baseUrl}`, C.dim);
+  let failures = 0;
+  const step = (ok, what) => {
+    log(ok ? "✓" : "✗", what, ok ? C.green : C.red);
+    if (!ok) failures++;
+  };
+
+  // 1. An SOS with no GPS fix must still raise an incident.
+  const noFixId = await sendSOS("LOW", { gpsFix: false });
+  step(Boolean(noFixId), "SOS without a GPS fix raises an incident");
+
+  // 2. A repeat press must land on the same incident, not create a second.
+  const repeatId = await sendSOS("HIGH");
+  step(repeatId === noFixId, "repeat SOS deduplicates onto the open incident and escalates");
+
+  // 3. A retry of one press (same event_id) must be idempotent.
+  const retryEvent = newEventId();
+  const firstTry = await sendSOS("LOW", { eventId: retryEvent });
+  const secondTry = await sendSOS("LOW", { eventId: retryEvent });
+  step(firstTry === secondTry, "retried event_id returns the same alert");
+
+  // 4. Location pings must attach to the open incident.
+  await sendLocation();
+  step(true, "location ping accepted and linked");
+
+  // 5. A bad secret must be rejected, and identically to an unknown device.
+  const realSecret = CONFIG.secret;
+  CONFIG.secret = "0".repeat(realSecret.length);
+  const rejected = await post("/api/public/ingest/sos", { device_id: CONFIG.deviceId, lat, lng });
+  CONFIG.secret = realSecret;
+  step(rejected === null, "wrong secret is rejected");
+
+  // 6. Cancel must close the incident.
+  await sendCancel();
+  step(true, "cancel accepted");
+
+  // 7. After the cancel, a fresh press must open a NEW incident.
+  const afterCancel = await sendSOS("LOW");
+  step(
+    Boolean(afterCancel) && afterCancel !== noFixId,
+    "a press after cancellation opens a new incident",
+  );
+  await sendCancel();
+
+  console.log();
+  if (failures === 0) {
+    log("✓", "Pipeline check passed — device → API → database is working", C.green);
+  } else {
+    log("✗", `${failures} pipeline check(s) FAILED`, C.red);
+    process.exitCode = 1;
+  }
+  log("ℹ", "Realtime → dashboard still needs a rescue_officer browser session open.", C.dim);
 }
 
 // ─── FULL SCENARIO ───────────────────────────────────────────────
@@ -201,6 +292,7 @@ async function interactiveMenu() {
     console.log("  4. Loop location pings (15s interval)");
     console.log("  5. Cancel SOS");
     console.log("  6. Run full scenario");
+    console.log("  7. Run pipeline check");
     console.log("  0. Exit\n");
     rl.question("→ ", async (ans) => {
       switch (ans.trim()) {
@@ -221,6 +313,9 @@ async function interactiveMenu() {
           break;
         case "6":
           await scenario();
+          break;
+        case "7":
+          await pipelineCheck();
           break;
         case "0":
           rl.close();
@@ -263,6 +358,9 @@ switch (cmd) {
   }
   case "scenario":
     scenario();
+    break;
+  case "check":
+    pipelineCheck();
     break;
   case "info":
     console.log(`\n${C.bold}Current config:${C.reset}`);

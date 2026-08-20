@@ -123,8 +123,11 @@ function FishermanPortal() {
         .eq("id", prof.fisherman_id)
         .maybeSingle(),
       supabase.from("boats").select("*").eq("owner_fisherman_id", prof.fisherman_id).limit(1),
+      // Explicit column list, matching DeviceRow. `select("*")` would fail:
+      // `authenticated` holds per-column SELECT grants on devices, not a
+      // table-level one, so the wildcard is refused outright.
       (supabase.from("devices") as any)
-        .select("*")
+        .select("id, device_id, last_seen_at, active")
         .eq("fisherman_id", prof.fisherman_id)
         .eq("active", true)
         .limit(1),

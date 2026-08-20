@@ -12,9 +12,10 @@ scoping (no assignment model yet) and `device_secret` exposure over the browser 
 - [ ] Ensure BMU officers can only manage records for their assigned BMU. (Blocked by missing assignment model below — currently all BMU officers see/write every BMU's data.)
 - [x] Ensure rescue officers can read active rescue/SOS data but cannot manage unrelated admin data. (Rescue officers cannot write `bmus`/`fishermen`/`boats`/`devices`/`profiles`/`user_roles`. Gap: RLS still permits direct write to `sea_trips`/`sos_alerts`, and reads ALL alerts not just active ones — tighten in Priority 1.)
 - [x] Ensure admins can manage users/roles through controlled functions only. (`set_user_role()` RPC with last-admin guard exists; RLS still permits direct admin table writes — fully RPC-only enforcement is Priority 1.)
-- [ ] Prevent browser clients from reading `devices.device_secret`. (The `devices read scoped` policy exposes `device_secret` to admin/bmu_officer/rescue_officer browser clients; needs column-level masking or a secret-free view.)
+- [x] Prevent browser clients from reading `devices.device_secret`. (Column-level `REVOKE SELECT (device_secret, device_secret_hash) ... FROM authenticated` in `20260812000000`, which applies underneath RLS. The `devices read scoped` policy had been handing every device secret to admin, BMU officer **and rescue officer** sessions — a rescue officer could have forged an SOS or cancelled a real one. `bmu.tsx` now selects explicit columns, since `select("*")` would fail on the revoked column.)
 - [x] Replace broad profile update policy with scoped profile update rules. (`profiles update scoped` = own row or admin, in `20260714000002`.)
 - [ ] Add a BMU officer assignment model so each BMU officer is explicitly scoped to one or more BMUs. (No assignment table/function exists yet; required before BMU scoping works.)
+- [ ] Reconcile multi-role resolution between the database and the UI. (`current_user_role()` collapses a user's roles with `ORDER BY role LIMIT 1`, which on the `app_role` enum means admin > bmu_officer > rescue_officer > fisherman; `pickPrimary()` in `use-role.ts` uses admin > rescue_officer > bmu_officer > fisherman. A user holding both `bmu_officer` and `rescue_officer` is therefore routed to `/rescue` by the UI while RLS evaluates them as a BMU officer. Not a privilege escalation — every right they get is one they were actually granted — but the effective permissions do not match the dashboard they land on. The durable fix is to make the RLS helpers role-set-aware (`has_role(...)` per policy) rather than picking a single winner; simply reordering `current_user_role()` would silently remove access from existing multi-role accounts.)
 - [x] Prevent staff accounts from being linked to fisherman records. (`chk_fisherman_link_staff` CHECK + `link_profile_to_fisherman` / `admin_link_profile_to_fisherman` RPC guards.)
 - [x] Prevent one fisherman record from being linked to multiple user profiles. (`profiles_one_user_per_fisherman` unique partial index + dedup in `20260714000009`.)
 
@@ -32,13 +33,38 @@ scoping (no assignment model yet) and `device_secret` exposure over the browser 
 
 ## Priority 2: Hardware Ingest Hardening
 
-- [ ] Store hashed device secrets instead of plaintext secrets.
-- [ ] Add device secret rotation support.
-- [ ] Add request timestamp and nonce/replay protection to hardware ingest endpoints.
-- [ ] Add rate limiting per device ID and source IP.
-- [ ] Add structured ingest logs for accepted and rejected device requests.
-- [ ] Return generic auth errors so attackers cannot distinguish unknown device IDs from bad secrets.
-- [ ] Confirm inactive devices cannot trigger SOS, location, or cancel operations.
+Status: implemented in `20260812000000_hardware_ingest_security.sql` and
+`src/lib/ingest-core.ts`. The three endpoints now share one code path
+(`handleSos`/`handleLocation`/`handleCancel`), so auth, status codes and logging
+cannot drift between them. Remaining gap is durable rate limiting.
+
+- [x] Store hashed device secrets instead of plaintext secrets. (`devices.device_secret_hash`, SHA-256, backfilled from the existing plaintext so deployed devices did not need re-flashing. The plaintext column is retained but revoked for one release to keep the change reversible — drop it once the fleet is verified.)
+- [x] Add device secret rotation support. (`rotate_bmu_device_secret()` RPC + "Rotate device secret" in the BMU console; returns the plaintext once and writes an audit event.)
+- [x] Generate secrets with a CSPRNG. (`generate_device_secret()` uses `gen_random_bytes(32)`. The previous `md5(random())` was predictable — Postgres `random()` is a seeded PRNG, so a guessed secret could forge an SOS or, worse, forge a `/cancel` that closes a real distress alert.)
+- [x] Add request timestamp and nonce/replay protection to hardware ingest endpoints. (Timestamp freshness is enforced when the device supplies one — ±10 min. `event_id` gives per-event idempotency via a unique index on `sos_alerts(device_id, ingest_event_id)`. The previous `isReplayAttempt()` helper was never called by anything and has been removed rather than left as decorative security.)
+- [x] Add rate limiting per device ID and source IP. (Unauthenticated traffic is throttled per source IP; authenticated traffic per device UUID *after* the secret is verified — throttling on an unauthenticated `device_id` let anyone who learned a device label suppress that device's next SOS.)
+- [ ] Make rate limiting durable across serverless instances. (`checkRateLimit` is an in-process `Map`: each cold instance starts empty and concurrent instances do not share counters, so it bounds one misbehaving connection but is not a defence against a distributed flood. Needs a shared store.)
+- [x] Add structured ingest logs for accepted and rejected device requests. (Every request gets a trace id, returned in `x-seaguard-trace`, logged as one JSON line server-side and stored in `ingest_request_logs.trace_id`.)
+- [x] Return generic auth errors so attackers cannot distinguish unknown device IDs from bad secrets. (Both produce a byte-identical 401. Internal detail goes to the audit log only — the endpoint previously returned raw exception messages to unauthenticated callers.)
+- [x] Confirm inactive devices cannot trigger SOS, location, or cancel operations. (403 on all three, covered by tests in `src/lib/ingest-core.test.ts`.)
+- [x] Never answer a server-side fault with a permanent 4xx. (Storage failures now return 503. Returning 400 for a database outage told the firmware an emergency was permanently invalid and it discarded the SOS.)
+- [ ] Drop `devices.device_secret` once the hashed column is confirmed across the fleet.
+
+## Priority 2b: Firmware Reliability
+
+Status: implemented in `firmware/rescue_watch/`. See HARDWARE_INTEGRATION.md for
+the reconciled behaviour and the list of what still needs a physical device.
+
+- [x] **Root cause of "SOS does not reach the dashboard":** `postJson()` never issued `AT+HTTPTERM`. The SIM800L permits one HTTP session, so the second `AT+HTTPINIT` returns `ERROR`. The 15-second location ping consumed the only session at boot, and every request afterwards — including the SOS — aborted before a byte went out.
+- [x] Parse `+HTTPACTION` tolerantly. (The modem emits `+HTTPACTION: 1,200,52` with a space; the code matched `+HTTPACTION:1,200` exactly, so even the one request that did go out was reported as a failure. Now covered by `firmware/test/test_at_parse.cpp`.)
+- [x] Stop long-press cancelling when there is no SOS to cancel. (Holding the button — the natural panic reaction — used to send `/cancel` after 1.5 s instead of raising an SOS. Now 3 s, and only when an SOS is open.)
+- [x] Accept roaming registration. (`AT+CREG?` matched only `0,1`; a device attached to a partner network as `0,5` was treated as unregistered.)
+- [x] Retry a failed SOS. (Capped exponential backoff, indefinitely, until the server confirms. Previously `STATE_FAIL` returned to idle and the SOS was gone.)
+- [x] Never transmit a fabricated position. (No fix sent `0,0`, which the API accepted, dropping the rescue marker in the Gulf of Guinea. The API now rejects `0,0` as "no fix" and accepts an SOS without coordinates.)
+- [x] Stop reporting a fabricated battery level. (Was hardcoded `80`. Now behind `BATTERY_SENSE_ENABLED`, off by default, and the field is omitted rather than invented.)
+- [x] Remove the hardcoded device credential from the sketch. (Moved to a git-ignored `secrets.h`. The committed secret must be treated as compromised — see below.)
+- [ ] **Rotate the device secret for `DEV-9WK7LO`.** It was committed in the firmware source and is in the git history, which cannot be rewritten (the Lovable sync in AGENTS.md forbids it). Rotate from the BMU console and re-flash. Until then, anyone with repository access can forge that device's SOS and cancel its real ones.
+- [ ] Verify SIM800L TLS against the deployment host. (Older modem firmware negotiates only TLS 1.0. Requires physical hardware.)
 
 ## Priority 3: Dashboard Completeness
 
@@ -83,7 +109,8 @@ When a fisherman cancels, operational state must return to what it was before th
 - [x] **Fix software cancel bug:** `cancelSoftwareSos()` now restores the trip when the active trip is in `sos` or `rescue_in_progress`, and the cancel path uses the shared helper for state restoration.
 - [x] Unify software cancel (`cancelSoftwareSos`) and hardware cancel (`/api/public/ingest/cancel`) so both update alert, trip, and rescue_operations in the same way. (Both use `src/lib/sos-cancel.ts` `buildSosCancelPatch`/`buildRescueOperationPatch`/`shouldRestoreTripStatus`. Divergence: software sets `rescue_operations.status='closed'`, hardware sets `'resolved'`; hardware restores the trip by `boat_id`, software by `captain_id`.)
 - [x] Require a false-alarm reason/note on every fisherman SOS cancel; the software path prompts for a reason and the hardware path records a cancel note while closing the alert. (`cancel_fisherman_sos` raises if reason is empty; hardware uses `"Hardware cancel"`.)
-- [ ] If rescue has already acknowledged or assigned the alert, still allow cancel only through the controlled flow above and notify rescue officers (do not silently undo an in-progress response). (Not implemented — the RPC cancels regardless of alert status and sends no rescue notification; an in-progress rescue response is closed silently.)
+- [x] If rescue has already acknowledged or assigned the alert, still allow cancel only through the controlled flow above and notify rescue officers (do not silently undo an in-progress response). (Hardware path: `handleCancel` raises a `dashboard` notification for every alert cancelled out of `acknowledged`/`assigned`/`in_progress`, using the existing `notifications` table and realtime channel — no external provider was invented. Software path via `cancel_fisherman_sos` still cancels silently; unifying it is the remaining half of this item.)
+- [ ] Raise the same rescue notification from the software cancel path (`cancel_fisherman_sos`).
 - [x] Keep GPS logs and prior alert rows immutable; only operational status fields reset. (RPCs only update `status`/`resolved_at`/`ended_at`/`notes`; rows are never deleted.)
 
 ### What must NOT change on cancel
@@ -143,8 +170,10 @@ Gaps cluster in two areas: (a) readiness/consistency validation at trip approval
 
 ## Priority 7: Verification
 
-- [ ] Normalize line endings so `npm.cmd run lint` passes.
-- [ ] Run `npm.cmd run build` after each major change.
-- [ ] Add RLS/RPC permission tests for fisherman, BMU officer, rescue officer, and admin users.
+- [x] Make the test suite runnable at all. (There was no `test` script and no runner; the four `*.test.ts` files had never been executed, and two of them asserted behaviour the code did not have. `scripts/run-tests.mjs` transpiles with the TypeScript compiler already in `devDependencies` — Node on several distros is built without TypeScript support, so `node --test` on `.ts` fails outright.)
+- [x] Add hardware ingest failure-matrix tests. (`src/lib/ingest-core.test.ts` — 28 cases: valid SOS, no-fix SOS, `0,0` SOS, duplicate SOS, replayed `event_id`, multiple open alerts, missing/invalid secret, unknown device, disabled device on all three endpoints, malformed JSON, every out-of-range field, stale timestamp, storage failure → 503, error-detail leakage, rate limit, location linking, cancel, cancel-after-engagement notification, cancel storage failure.)
+- [x] Add firmware parser tests. (`firmware/test/test_at_parse.cpp` — 36 checks over `+HTTPACTION`, `+SAPBR`, `+CREG` and the retry policy, compiled natively by `npm run test:firmware`.)
+- [ ] Normalize line endings / formatting so `npm run lint` passes. (Pre-existing: 437 problems at the start of this work, now 375, essentially all `prettier/prettier` in `auth.tsx`, `index.tsx`, `bmu.tsx`, `rescue.tsx` and `fisherman.tsx`. Fixing it is a whole-repo reformat and was kept out of this change set so the diff stays reviewable; run `npm run format` in a commit of its own.)
+- [ ] Add RLS/RPC permission tests for fisherman, BMU officer, rescue officer, and admin users. (Needs a live Postgres; the current suites are pure-unit and run without a database.)
 - [ ] Add workflow tests for trip request, BMU approval, captain cancel trip request, SOS trigger, rescue assignment, fisherman SOS cancel (restores trip to `at_sea`), hardware SOS cancel, and rescue resolution.
-- [ ] Update `README.md` and `HARDWARE_INTEGRATION.md` with the final provisioning and security model.
+- [x] Update `README.md` and `HARDWARE_INTEGRATION.md` with the final provisioning and security model. (HARDWARE_INTEGRATION.md rewritten against the actual firmware, with a "Changes from the previous revision" table listing what the old guide claimed but the code never did.)

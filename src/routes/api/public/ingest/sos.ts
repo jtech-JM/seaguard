@@ -1,8 +1,10 @@
 // Public ingest endpoint for hardware SOS triggers.
 // Auth: header `x-device-secret: <secret>` — issued per device in the BMU console.
-// Body: { device_id: string, lat: number, lng: number, accuracy?: number }
-// Creates a new active alert for the device (reuses any open alert) and logs the GPS fix.
-// This endpoint is the stable contract for ESP32 + GPS + SIM7600 hardware.
+// Body: { device_id, lat?, lng?, accuracy?, battery?, level?, gps_fix?, event_id?, timestamp? }
+//
+// All request handling lives in `@/lib/ingest-core`; this file only wires the
+// route to the Supabase-backed store. See HARDWARE_INTEGRATION.md for the
+// status-code contract the firmware relies on.
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { checkRateLimit, timingSafeEq } from "@/lib/hardware-ingest";

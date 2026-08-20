@@ -90,10 +90,14 @@ export type Database = {
         Row: {
           active: boolean;
           assigned_at: string | null;
-          boat_id: string | null;
           created_at: string;
           device_id: string;
-          device_secret: string;
+          // The plaintext column was dropped in 20260812010000. The hash is
+          // outside the per-column SELECT grant, so only the service-role
+          // client can read it.
+          device_secret_hash: string | null;
+          device_secret_rotated_at: string | null;
+          fisherman_id: string | null;
           hardware_type: string | null;
           id: string;
           last_seen_at: string | null;
@@ -102,10 +106,11 @@ export type Database = {
         Insert: {
           active?: boolean;
           assigned_at?: string | null;
-          boat_id?: string | null;
           created_at?: string;
           device_id: string;
-          device_secret?: string;
+          device_secret_hash?: string | null;
+          device_secret_rotated_at?: string | null;
+          fisherman_id?: string | null;
           hardware_type?: string | null;
           id?: string;
           last_seen_at?: string | null;
@@ -114,10 +119,11 @@ export type Database = {
         Update: {
           active?: boolean;
           assigned_at?: string | null;
-          boat_id?: string | null;
           created_at?: string;
           device_id?: string;
-          device_secret?: string;
+          device_secret_hash?: string | null;
+          device_secret_rotated_at?: string | null;
+          fisherman_id?: string | null;
           hardware_type?: string | null;
           id?: string;
           last_seen_at?: string | null;
@@ -125,10 +131,10 @@ export type Database = {
         };
         Relationships: [
           {
-            foreignKeyName: "devices_boat_id_fkey";
-            columns: ["boat_id"];
+            foreignKeyName: "devices_fisherman_id_fkey";
+            columns: ["fisherman_id"];
             isOneToOne: false;
-            referencedRelation: "boats";
+            referencedRelation: "fishermen";
             referencedColumns: ["id"];
           },
         ];

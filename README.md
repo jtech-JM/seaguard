@@ -133,7 +133,7 @@ sequenceDiagram
 
 **Hardware path:** `/api/public/ingest/sos`, `location`, `cancel` — authenticated via `x-device-secret`, uses the service-role client (bypasses RLS).
 
-**Software path:** Fisherman portal inserts directly into `sos_alerts` and `gps_logs` from the browser.
+**Software path:** Fisherman portal calls the `trigger_fisherman_sos` / `cancel_fisherman_sos` RPCs, which enforce device ownership and record the reason.
 
 Alert status transitions: `new` → `acknowledged` → `assigned` → `in_progress` → `resolved` → `closed`.
 
@@ -148,7 +148,8 @@ Alert status transitions: `new` → `acknowledged` → `assigned` → `in_progre
 | Auth gate | `_authenticated/route.tsx` | Unauthenticated users → `/auth` |
 | Role routing | `requireRole()` + `ROLE_HOME` | Each dashboard only loads for its role; wrong role redirected home |
 | Role priority | `pickPrimary()` in `use-role.ts` | Multi-role users: `admin` > `rescue_officer` > `bmu_officer` > `fisherman` |
-| Hardware ingest | `x-device-secret` header | Timing-safe secret compare; inactive devices rejected |
+| Hardware ingest | `x-device-secret` header | SHA-256 digest compared in constant time; unknown device and bad secret return an identical 401; inactive devices rejected |
+| Device secrets | Column-level `REVOKE` + rotation RPC | Secrets are hashed at rest and never readable by a browser session |
 | Fisherman link | `chk_fisherman_link_staff` CHECK | Staff accounts cannot be linked to fisherman records |
 
 ### Intended Model (in progress)
@@ -199,7 +200,12 @@ src/
 │   ├── use-role.ts                 # Role types, ROLE_HOME, helpers
 │   ├── route-guard.ts              # requireRole() for beforeLoad
 │   ├── marine-types.ts             # Shared domain types
-│   └── utils.ts                   # cn() tailwind helper
+│   ├── ingest-core.ts              # Shared hardware ingest request handling
+│   ├── ingest-types.ts             # Storage port the ingest core depends on
+│   ├── ingest-store.ts             # Supabase implementation of that port
+│   ├── ingest-deps.server.ts       # Server-only wiring (service-role client)
+│   ├── ingest-test-store.ts        # In-memory store used by the ingest tests
+│   └── utils.ts                    # cn() tailwind helper
 ├── integrations/
 │   ├── supabase/
 │   │   ├── client.ts               # Browser Supabase client
@@ -219,6 +225,18 @@ src/
 
 supabase/
 └── migrations/                     # All DB migrations in order
+
+firmware/
+├── rescue_watch/
+│   ├── rescue_watch.ino            # ESP8266 + GPS + SIM800L sketch
+│   ├── at_parse.h                  # SIM800L AT response parsing (unit-tested)
+│   └── secrets.example.h           # Copy to secrets.h — never committed
+└── test/
+    └── test_at_parse.cpp           # Host-side tests for at_parse.h
+
+scripts/
+├── run-tests.mjs                   # Transpiles and runs src/**/*.test.ts
+└── run-firmware-tests.mjs          # Compiles and runs the firmware tests
 ```
 
 ---
@@ -255,6 +273,11 @@ bun run dev
 # Build for production
 bun run build
 
+# Lint, typecheck, and run the test suites
+bun run lint
+bun run typecheck
+bun run test
+
 # Push DB migrations
 supabase db push
 
@@ -289,6 +312,11 @@ Then log in and use the Admin console to assign roles to everyone else.
 | `20260705...`    | Overdue trip auto-detection (pg_cron), realtime publication extensions       |
 | `20260706000000` | Add `rescue_officer` enum value                                              |
 | `20260706000001` | Migrate old roles, add fisherman-link constraint                             |
+| `20260707...`    | Profile → BMU access                                                         |
+| `20260714...`    | Workflow enforcement, role-scoped RLS, server-op RPCs, audit logging          |
+| `20260715...`    | Captain certification, device → fisherman assignment, trip/rescue fixes       |
+| `20260716...`    | BMU coordinates, role enum cleanup, BMU write policies                        |
+| `20260812000000` | Hashed + CSPRNG device secrets, secret rotation, SOS idempotency key, atomic hardware cancel, ingest trace ids |
 
 ---
 
@@ -314,4 +342,22 @@ TanStack Start uses **file-based routing**. Every `.tsx` in `src/routes/` is a r
 
 ## Hardware Integration
 
-See **[HARDWARE_INTEGRATION.md](./HARDWARE_INTEGRATION.md)** for the complete firmware integration guide including all endpoint payloads, authentication, and example ESP32 code.
+**[SOS_ROOT_CAUSE.md](./SOS_ROOT_CAUSE.md)** is the root-cause report for the August 2026
+fault where the physical SOS button never reached the rescue dashboard — read it before
+changing anything on the ingest or firmware path.
+
+See **[HARDWARE_INTEGRATION.md](./HARDWARE_INTEGRATION.md)** for the endpoint payloads,
+the status-code contract the firmware depends on, provisioning and secret rotation, and a
+step-by-step procedure for diagnosing "the SOS button does nothing".
+
+The device is an **ESP8266 (NodeMCU) + NEO-6M GPS + SIM800L**. The sketch lives in
+[`firmware/rescue_watch/`](./firmware/rescue_watch/).
+
+To exercise the device → API → database path without hardware:
+
+```bash
+export SEAGUARD_URL=http://localhost:8080
+export SEAGUARD_DEVICE_ID=DEV-SIM001
+export SEAGUARD_SECRET=<secret shown once in the BMU console>
+node simulate.mjs check
+```

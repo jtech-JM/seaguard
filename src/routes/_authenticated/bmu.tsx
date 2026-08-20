@@ -12,6 +12,7 @@ import {
   manageBoat,
   manageCrewMember,
   manageDevice,
+  rotateDeviceSecret,
   manageFisherman,
   transitionTrip,
   linkProfile,
@@ -96,7 +97,13 @@ function BMUDashboard() {
       supabase.from("bmus").select("*").order("name").limit(100),
       supabase.from("fishermen").select("*").order("full_name").limit(100),
       supabase.from("boats").select("*").order("name").limit(100),
-      supabase.from("devices").select("*").order("device_id").limit(100),
+      // Explicit column list: `select("*")` would ask for device_secret, which
+      // is revoked from the authenticated role and fails the whole query.
+      supabase
+        .from("devices")
+        .select("id, device_id, fisherman_id, hardware_type, active, last_seen_at, device_secret_rotated_at")
+        .order("device_id")
+        .limit(100),
       supabase
         .from("sea_trips")
         .select("*, captain:captain_id(full_name,phone), boat:boat_id(name,registration_number)")
@@ -1487,6 +1494,23 @@ function DeviceModal({
     setCopied(label);
     setTimeout(() => setCopied(null), 1200);
   }
+
+  async function rotateSecret() {
+    if (!initial) return;
+    const reason = window.prompt(
+      "Rotating issues a new secret and immediately stops the current one working.\n" +
+        "The device must be re-flashed before it can report again.\n\nReason for rotation:",
+    );
+    if (!reason || reason.trim().length === 0) return;
+    setBusy(true);
+    try {
+      const { data, error } = await rotateDeviceSecret(initial.id, reason.trim());
+      if (error) window.alert(error.message);
+      else if (data) setNewSecret(data.device_secret);
+    } finally {
+      setBusy(false);
+    }
+  }
   const ingestUrl =
     typeof window !== "undefined"
       ? `${window.location.origin}/api/public/ingest/sos`
@@ -1600,11 +1624,22 @@ function DeviceModal({
             <div className="text-muted-foreground">
               Device secret (<span className="font-mono">x-device-secret</span> header)
             </div>
+            <p className="mt-1 rounded bg-muted px-2 py-1.5 text-[11px] text-muted-foreground">
+              Stored hashed and shown only once, when it is generated. If the secret was lost or
+              may have leaked, rotate it below and re-flash the device — the old secret stops
+              working immediately.
+              {initial.device_secret_rotated_at && (
+                <span className="mt-1 block">
+                  Last rotated {new Date(initial.device_secret_rotated_at).toLocaleString()}
+                </span>
+              )}
+            </p>
             <button
-              onClick={() => copy(initial.device_secret, "secret")}
-              className="mt-1 w-full break-all rounded bg-muted px-2 py-1.5 text-left font-mono text-[11px] text-primary hover:bg-accent transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={rotateSecret}
+              disabled={busy}
+              className="mt-2 w-full rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-500/20 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-400"
             >
-              {initial.device_secret}
+              Rotate device secret
             </button>
           </div>
           <div>
