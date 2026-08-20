@@ -8,6 +8,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 
 const Body = z.object({
   device_id: z.string().min(1),
+  device_secret: z.string().min(1).optional(),
   timestamp: z.string().datetime().optional(),
   nonce: z.string().min(1).optional(),
 });
@@ -24,15 +25,15 @@ export const Route = createFileRoute("/api/public/ingest/cancel")({
       OPTIONS: async () => new Response(null, { status: 204, headers: cors }),
       POST: async ({ request }) => {
         try {
-          const secret = request.headers.get("x-device-secret") ?? "";
           const sourceIp = request.headers.get("x-forwarded-for") ?? "unknown";
+          const body = Body.parse(await request.json());
+          const secret = (body.device_secret ?? request.headers.get("x-device-secret")) ?? "";
           if (!secret) {
             return Response.json(
               { error: "Invalid device credentials" },
               { status: 401, headers: cors },
             );
           }
-          const body = Body.parse(await request.json());
           if (!checkRateLimit(`${body.device_id}:${sourceIp}`)) {
             await (supabaseAdmin.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<unknown>)(
               "log_ingest_request",
@@ -96,9 +97,15 @@ export const Route = createFileRoute("/api/public/ingest/cancel")({
 
           const activeAlertIds = (alerts ?? []).map((alert) => alert.id);
           if (activeAlertIds.length > 0) {
-            const patch = buildSosCancelPatch(null, "Hardware cancel");
+            // Cancel each alert individually so existing notes are preserved
+            for (const alert of alerts ?? []) {
+              const patch = buildSosCancelPatch(
+                (alert as { notes: string | null }).notes,
+                "Hardware cancel",
+              );
+              await supabaseAdmin.from("sos_alerts").update(patch).eq("id", alert.id);
+            }
             const rescuePatch = buildRescueOperationPatch(null, "Hardware cancel");
-            await supabaseAdmin.from("sos_alerts").update(patch).in("id", activeAlertIds);
             await supabaseAdmin.from("rescue_operations").update(rescuePatch).in("alert_id", activeAlertIds);
           }
 
@@ -116,7 +123,8 @@ export const Route = createFileRoute("/api/public/ingest/cancel")({
               .in("status", ["sos", "rescue_in_progress"]);
           }
 
-          await (supabaseAdmin.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<unknown>)(
+          // Fire-and-forget audit log — must not block or kill a successful response
+          (supabaseAdmin.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<unknown>)(
             "log_ingest_request",
             {
               p_device_id: body.device_id,
@@ -126,7 +134,8 @@ export const Route = createFileRoute("/api/public/ingest/cancel")({
               p_status_code: 200,
               p_error_message: null,
             },
-          );
+          ).catch(() => { /* non-critical */ });
+
           return Response.json({ ok: true }, { headers: cors });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);

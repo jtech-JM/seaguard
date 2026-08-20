@@ -48,7 +48,6 @@ Send this **once when the SOS button is pressed**. Creates a new incident on the
   "lat": -4.0521,
   "lng": 39.7011,
   "accuracy": 12.5,
-  "battery": 78,
   "level": "HIGH"
 }
 ```
@@ -94,8 +93,7 @@ Send every **15 seconds** while the device is powered on (SOS active or not). Ke
   "device_id": "DEV-ABC123",
   "lat": -4.0524,
   "lng": 39.7015,
-  "accuracy": 10.0,
-  "battery": 77
+  "accuracy": 10.0
 }
 ```
 

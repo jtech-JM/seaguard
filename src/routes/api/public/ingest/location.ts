@@ -1,14 +1,16 @@
 // Continuous location updates from a hardware device.
-// Auth: header `x-device-secret: <secret>`.
-// Body: { device_id, lat, lng, accuracy? }
+// Auth: body `device_secret` or header `x-device-secret`.
+// Body: { device_id, device_secret?, lat, lng, accuracy?, battery?, level? }
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
+import { checkRateLimit, timingSafeEq } from "@/lib/hardware-ingest";
 
 const Body = z.object({
   device_id: z.string().min(1),
+  device_secret: z.string().min(1).optional(),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
-  accuracy: z.number().nonnegative().optional(),
+  accuracy: z.number().nonnegative().nullable().optional(),
   battery: z.number().min(0).max(100).optional(),
   level: z.enum(["LOW", "HIGH"]).optional(),
 });
@@ -19,27 +21,24 @@ const cors = {
   "Access-Control-Allow-Headers": "content-type, x-device-secret",
 };
 
-function timingSafeEq(a: string, b: string) {
-  if (a.length !== b.length) return false;
-  let out = 0;
-  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return out === 0;
-}
-
 export const Route = createFileRoute("/api/public/ingest/location")({
   server: {
     handlers: {
       OPTIONS: async () => new Response(null, { status: 204, headers: cors }),
       POST: async ({ request }) => {
         try {
-          const secret = request.headers.get("x-device-secret") ?? "";
+          const sourceIp = request.headers.get("x-forwarded-for") ?? "unknown";
+          const body = Body.parse(await request.json());
+          const secret = (body.device_secret ?? request.headers.get("x-device-secret")) ?? "";
           if (!secret) {
             return Response.json(
               { error: "Missing x-device-secret" },
               { status: 401, headers: cors },
             );
           }
-          const body = Body.parse(await request.json());
+          if (!checkRateLimit(`${body.device_id}:${sourceIp}`)) {
+            return Response.json({ error: "Too many requests" }, { status: 429, headers: cors });
+          }
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
           const { data: device } = await supabaseAdmin
