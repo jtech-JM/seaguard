@@ -32,6 +32,7 @@ import {
   ClipboardList,
   ExternalLink,
   MapPin,
+  Maximize2,
   Moon,
   Navigation,
   Radio,
@@ -122,6 +123,7 @@ function RescueDashboard() {
   const routeLineRef = useRef<import("leaflet").Polyline | null>(null);
   const routeMarkersRef = useRef<import("leaflet").Marker[]>([]);
   const bmuMarkersRef = useRef<Map<string, import("leaflet").Marker>>(new Map());
+  const lastPannedSelectionRef = useRef<string | null>(null);
 
   // Per-alert GPS data for the detail panel
   const [detailLatest, setDetailLatest] = useState<GpsLog | null>(null);
@@ -417,6 +419,57 @@ function RescueDashboard() {
     }
   }
 
+  function fitIncidentsInView() {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const activeAlerts = filteredAlerts.filter(
+      (alert): alert is AlertJoined & { last_lat: number; last_lng: number } =>
+        ACTIVE_STATUSES.includes(alert.status) &&
+        alert.last_lat != null &&
+        alert.last_lng != null,
+    );
+    const alertsToFrame =
+      activeAlerts.length > 0
+        ? activeAlerts
+        : filteredAlerts.filter(
+            (alert): alert is AlertJoined & { last_lat: number; last_lng: number } =>
+              alert.last_lat != null && alert.last_lng != null,
+          );
+    const incidentPoints = alertsToFrame.map(
+      (alert): [number, number] => [alert.last_lat, alert.last_lng],
+    );
+    const availableBmus = bmus.filter(
+      (bmu): bmu is BMU & { lat: number; lng: number } =>
+        bmu.lat != null &&
+        bmu.lng != null &&
+        (!selectedBmuId || bmu.id === selectedBmuId),
+    );
+    const nearbyBmus =
+      incidentPoints.length > 0
+        ? alertsToFrame.flatMap((alert) =>
+            [...availableBmus]
+              .sort(
+                (a, b) =>
+                  haversineKm(alert.last_lat, alert.last_lng, a.lat, a.lng) -
+                  haversineKm(alert.last_lat, alert.last_lng, b.lat, b.lng),
+              )
+              .slice(0, 3)
+              .map((bmu): [number, number] => [bmu.lat, bmu.lng]),
+          )
+        : availableBmus.map((bmu): [number, number] => [bmu.lat, bmu.lng]);
+    const points = [...incidentPoints, ...nearbyBmus];
+    if (points.length === 0) return;
+
+    const rightPadding = panelOpen ? Math.min(400, map.getSize().x * 0.55) : 24;
+    map.fitBounds(points, {
+      animate: true,
+      maxZoom: 13,
+      paddingTopLeft: [24, 24],
+      paddingBottomRight: [rightPadding, 24],
+    });
+  }
+
   // ── Leaflet: load library once ───────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -481,12 +534,23 @@ function RescueDashboard() {
 
   // ── Pan to selected alert ────────────────────────────────────────────────
   useEffect(() => {
-    if (!selectedId || !mapRef.current) return;
+    if (!selectedId) {
+      lastPannedSelectionRef.current = null;
+      return;
+    }
+    const map = mapRef.current;
+    if (!map || lastPannedSelectionRef.current === selectedId) return;
     const a = filteredAlerts.find((al) => al.id === selectedId);
     if (a?.last_lat != null && a?.last_lng != null) {
-      mapRef.current.panTo([a.last_lat, a.last_lng], { animate: true, duration: 0.6 });
+      map.panInside([a.last_lat, a.last_lng], {
+        paddingTopLeft: [24, 24],
+        paddingBottomRight: [panelOpen ? Math.min(404, map.getSize().x * 0.55) : 24, 24],
+        animate: true,
+        duration: 0.6,
+      });
+      lastPannedSelectionRef.current = selectedId;
     }
-  }, [selectedId, filteredAlerts]);
+  }, [selectedId, filteredAlerts, panelOpen]);
 
   // ── BMU markers ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -807,6 +871,12 @@ function RescueDashboard() {
     ? Math.floor((now - new Date(detailLatest.recorded_at).getTime()) / 1000)
     : null;
   const panelOpen = selectedId !== null && selected !== null;
+  const hasMapLocations =
+    filteredAlerts.some((alert) => alert.last_lat != null && alert.last_lng != null) ||
+    bmus.some(
+      (bmu) =>
+        bmu.lat != null && bmu.lng != null && (!selectedBmuId || bmu.id === selectedBmuId),
+    );
   const selectedIsActive = selected ? ACTIVE_STATUSES.includes(selected.status) : false;
 
   return (
@@ -1018,6 +1088,15 @@ function RescueDashboard() {
             right: panelOpen ? "min(calc(380px + 1rem), 100%)" : "1rem",
           }}
         >
+          <button
+            onClick={fitIncidentsInView}
+            disabled={!hasMapLocations}
+            title="Fit incidents and nearby BMUs"
+            className="inline-flex items-center gap-2 rounded-lg border border-foam/20 bg-ocean/90 px-3 py-2 text-xs font-semibold text-foam shadow-lg backdrop-blur-md transition hover:bg-foam/10 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Maximize2 className="h-4 w-4" />
+            Fit incidents
+          </button>
           <button
             onClick={toggleSatelliteView}
             className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold shadow-lg backdrop-blur-md transition ${
