@@ -1172,7 +1172,7 @@ function buildMarkerIcon(
 
 function getMarkerLabel(alert: AlertJoined) {
   const detail = alert.emergency_level ?? ALERT_STATUS_LABEL[alert.status].toUpperCase();
-  return `SOS · ${detail}`;
+  return detail;
 }
 
 function getMarkerAccessibleLabel(alert: AlertJoined) {
