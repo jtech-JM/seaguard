@@ -67,6 +67,21 @@ interface AlertJoined extends SOSAlertRow {
   bmu?: BMU | null;
 }
 
+type DashboardMetric =
+  | "active-sos"
+  | "active-rescues"
+  | "boats-at-sea"
+  | "overdue"
+  | "devices-online"
+  | "resolved";
+
+interface MetricDetailRow {
+  id: string;
+  title: string;
+  subtitle?: string;
+  alertId?: string;
+}
+
 function fmtDuration(ms: number) {
   const s = Math.max(0, Math.floor(ms / 1000));
   const m = Math.floor(s / 60);
@@ -92,6 +107,12 @@ function RescueDashboard() {
   const [bmus, setBMUs] = useState<BMU[]>([]);
   const [selectedBmuId, setSelectedBmuId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [metricDetails, setMetricDetails] = useState<{
+    title: string;
+    loading: boolean;
+    error?: string;
+    rows: MetricDetailRow[];
+  } | null>(null);
   const [now, setNow] = useState(Date.now());
   const [muted, setMuted] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
@@ -138,6 +159,138 @@ function RescueDashboard() {
     if (!selectedBmuId) return alerts;
     return alerts.filter((a) => a.bmu_id === selectedBmuId);
   }, [alerts, selectedBmuId]);
+  const resolvedCount = filteredAlerts.filter(
+    (alert) =>
+      (alert.status === "resolved" || alert.status === "closed") &&
+      Date.now() - new Date(alert.started_at).getTime() < 86_400_000,
+  ).length;
+
+  async function showMetricDetails(metric: DashboardMetric) {
+    const titles: Record<DashboardMetric, string> = {
+      "active-sos": "Active SOS incidents",
+      "active-rescues": "Active rescue operations",
+      "boats-at-sea": "Boats at sea",
+      overdue: "Overdue boats",
+      "devices-online": "Devices online",
+      resolved: "Resolved incidents (24h)",
+    };
+    setMetricDetails({ title: titles[metric], loading: true, rows: [] });
+
+    try {
+      let rows: MetricDetailRow[] = [];
+      if (metric === "active-sos" || metric === "resolved") {
+        rows = filteredAlerts
+          .filter((alert) =>
+            metric === "active-sos"
+              ? ACTIVE_STATUSES.includes(alert.status)
+              : (alert.status === "resolved" || alert.status === "closed") &&
+                Date.now() - new Date(alert.started_at).getTime() < 86_400_000,
+          )
+          .map((alert) => ({
+            id: alert.id,
+            alertId: alert.id,
+            title: alert.boat?.name ?? alert.fisherman?.full_name ?? "Unknown person or vessel",
+            subtitle: `${ALERT_STATUS_LABEL[alert.status]}${alert.emergency_level ? ` · ${alert.emergency_level}` : ""}`,
+          }));
+      } else if (metric === "active-rescues") {
+        let query = supabase
+          .from("rescue_operations")
+          .select(
+            "id, team_name, started_at, alert:alert_id!inner(id, bmu_id, boat:boat_id(name), fisherman:fisherman_id(full_name))",
+          )
+          .is("ended_at", null);
+        if (selectedBmuId) query = query.eq("alert.bmu_id", selectedBmuId);
+        const { data, error } = await query.order("started_at", { ascending: false });
+        if (error) throw error;
+        rows = ((data ?? []) as unknown as Array<{
+          id: string;
+          team_name: string;
+          started_at: string;
+          alert: {
+            id: string;
+            bmu_id: string | null;
+            boat: { name: string } | null;
+            fisherman: { full_name: string | null } | null;
+          } | null;
+        }>).map((operation) => ({
+          id: operation.id,
+          alertId: operation.alert?.id,
+          title:
+            operation.alert?.boat?.name ??
+            operation.alert?.fisherman?.full_name ??
+            "Unknown person or vessel",
+          subtitle: `${operation.team_name} · Started ${new Date(operation.started_at).toLocaleString()}`,
+        }));
+      } else if (metric === "boats-at-sea" || metric === "overdue") {
+        let query = supabase
+          .from("sea_trips")
+          .select(
+            "id, status, expected_return, destination, boat:boat_id(name), captain:captain_id(full_name)",
+          )
+          .eq("status", "at_sea");
+        if (metric === "overdue") query = query.lt("expected_return", new Date().toISOString());
+        if (selectedBmuId) query = query.eq("bmu_id", selectedBmuId);
+        const { data, error } = await query.order("expected_return", { ascending: true });
+        if (error) throw error;
+        rows = ((data ?? []) as unknown as Array<{
+          id: string;
+          expected_return: string | null;
+          destination: string | null;
+          boat: { name: string } | null;
+          captain: { full_name: string | null } | null;
+        }>).map((trip) => ({
+          id: trip.id,
+          title: trip.boat?.name ?? trip.captain?.full_name ?? "Unknown vessel",
+          subtitle: [
+            trip.captain?.full_name,
+            trip.destination,
+            trip.expected_return
+              ? `Expected back ${new Date(trip.expected_return).toLocaleString()}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        }));
+      } else {
+        const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        let onlineWithFisherman = supabase
+          .from("devices")
+          .select("id, device_id, last_seen_at, fishermen!inner(bmu_id)")
+          .gte("last_seen_at", cutoff);
+        let onlineWithoutFisherman = supabase
+          .from("devices")
+          .select("id, device_id, last_seen_at, boats!inner(bmu_id)")
+          .gte("last_seen_at", cutoff)
+          .is("fisherman_id", null);
+        if (selectedBmuId) {
+          onlineWithFisherman = onlineWithFisherman.eq("fishermen.bmu_id", selectedBmuId);
+          onlineWithoutFisherman = onlineWithoutFisherman.eq("boats.bmu_id", selectedBmuId);
+        }
+        const [withFisherman, withoutFisherman] = await Promise.all([
+          onlineWithFisherman.order("last_seen_at", { ascending: false }),
+          onlineWithoutFisherman.order("last_seen_at", { ascending: false }),
+        ]);
+        if (withFisherman.error) throw withFisherman.error;
+        if (withoutFisherman.error) throw withoutFisherman.error;
+        rows = [...(withFisherman.data ?? []), ...(withoutFisherman.data ?? [])].map((device) => ({
+          id: device.id,
+          title: device.device_id,
+          subtitle: device.last_seen_at
+            ? `Last seen ${new Date(device.last_seen_at).toLocaleString()}`
+            : "Last seen time unavailable",
+        }));
+      }
+
+      setMetricDetails({ title: titles[metric], loading: false, rows });
+    } catch (error) {
+      setMetricDetails({
+        title: titles[metric],
+        loading: false,
+        rows: [],
+        error: error instanceof Error ? error.message : "Could not load these records.",
+      });
+    }
+  }
 
   async function refresh() {
     const { data } = await supabase
@@ -969,44 +1122,117 @@ function RescueDashboard() {
           value={activeCount}
           tone={activeCount ? "distress" : "muted"}
           icon={<Siren className="h-3.5 w-3.5" />}
+          onClick={() => void showMetricDetails("active-sos")}
         />
         <StatCell
           label="Active Rescues"
           value={stats.activeRescues}
           tone="tide"
           icon={<Radio className="h-3.5 w-3.5" />}
+          onClick={() => void showMetricDetails("active-rescues")}
         />
         <StatCell
           label="Boats at Sea"
           value={stats.boatsAtSea}
           tone="foam"
           icon={<Ship className="h-3.5 w-3.5" />}
+          onClick={() => void showMetricDetails("boats-at-sea")}
         />
         <StatCell
           label="Overdue"
           value={stats.overdue}
           tone={stats.overdue ? "distress" : "muted"}
           icon={<Waves className="h-3.5 w-3.5" />}
+          onClick={() => void showMetricDetails("overdue")}
         />
         <StatCell
           label="Devices Online"
           value={stats.devicesOnline}
           tone="tide"
           icon={<Radio className="h-3.5 w-3.5" />}
+          onClick={() => void showMetricDetails("devices-online")}
         />
         <StatCell
           label="Resolved (24h)"
-          value={
-            filteredAlerts.filter(
-              (a) =>
-                (a.status === "resolved" || a.status === "closed") &&
-                Date.now() - new Date(a.started_at).getTime() < 86_400_000,
-            ).length
-          }
+          value={resolvedCount}
           tone="muted"
           icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+          onClick={() => void showMetricDetails("resolved")}
         />
       </div>
+
+      {metricDetails && (
+        <div
+          className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setMetricDetails(null)}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="metric-details-title"
+            className="max-h-[80vh] w-full max-w-xl overflow-hidden rounded-xl border border-foam/15 bg-ocean shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-foam/10 px-5 py-4">
+              <div>
+                <h2 id="metric-details-title" className="text-sm font-semibold text-foam">
+                  {metricDetails.title}
+                </h2>
+                {!metricDetails.loading && !metricDetails.error && (
+                  <p className="mt-1 text-xs text-foam/50">
+                    {metricDetails.rows.length} matching record
+                    {metricDetails.rows.length === 1 ? "" : "s"}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setMetricDetails(null)}
+                aria-label="Close details"
+                className="rounded-lg px-2 py-1 text-lg text-foam/60 hover:bg-foam/10 hover:text-foam"
+              >
+                ×
+              </button>
+            </div>
+            <div className="max-h-[65vh] overflow-y-auto p-3">
+              {metricDetails.loading ? (
+                <p className="px-3 py-8 text-center text-sm text-foam/60">Loading records…</p>
+              ) : metricDetails.error ? (
+                <p role="alert" className="px-3 py-8 text-center text-sm text-distress">
+                  {metricDetails.error}
+                </p>
+              ) : metricDetails.rows.length === 0 ? (
+                <p className="px-3 py-8 text-center text-sm text-foam/60">
+                  No matching records.
+                </p>
+              ) : (
+                <ul className="divide-y divide-foam/10">
+                  {metricDetails.rows.map((row) => (
+                    <li key={row.id}>
+                      {row.alertId ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMetricDetails(null);
+                            setSelectedId(row.alertId!);
+                          }}
+                          className="w-full rounded-lg px-3 py-3 text-left hover:bg-foam/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tide"
+                        >
+                          <MetricDetailContent row={row} />
+                        </button>
+                      ) : (
+                        <div className="px-3 py-3">
+                          <MetricDetailContent row={row} />
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* Body: full-screen map */}
       <div className="relative flex-1">
@@ -1541,11 +1767,13 @@ function StatCell({
   value,
   tone,
   icon,
+  onClick,
 }: {
   label: string;
   value: number;
   tone: "distress" | "tide" | "foam" | "muted";
   icon: React.ReactNode;
+  onClick: () => void;
 }) {
   const color =
     tone === "distress"
@@ -1556,19 +1784,35 @@ function StatCell({
           ? "text-foam"
           : "text-foam/50";
   return (
-    <div className="bg-ocean px-4 py-3">
-      <div
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`${label}: ${value}. View matching records`}
+      className="group bg-ocean px-4 py-3 text-left transition-colors hover:bg-foam/[0.06] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-tide"
+    >
+      <span
         className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider ${color}`}
       >
         {icon}
         {label}
-      </div>
-      <div
-        className={`mt-1 text-2xl font-semibold tabular-nums ${tone === "muted" ? "text-foam/70" : color}`}
+      </span>
+      <span
+        className={`mt-1 block text-2xl font-semibold tabular-nums ${tone === "muted" ? "text-foam/70" : color}`}
       >
         {value}
-      </div>
-    </div>
+      </span>
+      <span className="sr-only">View matching records</span>
+    </button>
+  );
+}
+
+function MetricDetailContent({ row }: { row: MetricDetailRow }) {
+  return (
+    <>
+      <div className="text-sm font-medium text-foam">{row.title}</div>
+      {row.subtitle && <div className="mt-1 text-xs text-foam/55">{row.subtitle}</div>}
+      {row.alertId && <div className="mt-1 text-[10px] font-semibold text-tide">View on map →</div>}
+    </>
   );
 }
 
