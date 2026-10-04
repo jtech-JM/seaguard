@@ -814,7 +814,6 @@ function RescueDashboard() {
       <audio ref={audioRef} src={ALARM_URL} preload="auto" />
       <style>{`
         @keyframes sos-pulse {0%{transform:scale(0.6);opacity:1}100%{transform:scale(2.2);opacity:0}}
-        @keyframes flash {0%,100%{opacity:1}50%{opacity:.55}}
         .leaflet-container{background:#e5e5e5;font-family:inherit}
         .leaflet-control-zoom a{background:rgba(255,255,255,0.95)!important;color:#1a1a1a!important;border-color:rgba(0,0,0,0.08)!important}
       `}</style>
@@ -1547,12 +1546,12 @@ function EmergencyBanner({
   onView: () => void;
 }) {
   return (
-    <div className="border-b-2 border-distress bg-distress/95 px-4 py-3 text-foam shadow-2xl animate-[flash_1s_ease-in-out_infinite] sm:px-6">
+    <div className="border-b-2 border-distress bg-distress px-4 py-3 text-foam shadow-2xl sm:px-6">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3">
         <div className="flex min-w-0 flex-1 basis-64 items-center gap-4">
           <Siren className="h-6 w-6 shrink-0 animate-pulse" />
           <div className="min-w-0">
-            <div className="text-[11px] uppercase tracking-[0.2em] opacity-80">
+            <div className="text-[11px] uppercase tracking-[0.2em]">
               {count > 1 ? `${count} NEW SOS INCIDENTS` : "NEW SOS INCIDENT"}
             </div>
             <div className="text-base font-semibold">
