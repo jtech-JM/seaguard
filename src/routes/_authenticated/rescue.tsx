@@ -466,14 +466,19 @@ function RescueDashboard() {
       const isSelected = a.id === selectedId;
 
       const icon = buildMarkerIcon(L, a, isActive, isSelected);
+      const accessibleLabel = getMarkerAccessibleLabel(a);
 
       const existing = markersRef.current.get(a.id);
       if (existing) {
         existing.setLatLng(pos);
         existing.setIcon(icon);
+        existing.options.title = accessibleLabel;
+        existing.getElement()?.setAttribute("title", accessibleLabel);
+        existing.getElement()?.setAttribute("aria-label", accessibleLabel);
       } else {
-        const marker = L.marker(pos, { icon }).addTo(map);
+        const marker = L.marker(pos, { icon, title: accessibleLabel }).addTo(map);
         marker.on("click", () => setSelectedId((prev) => (prev === a.id ? null : a.id)));
+        marker.getElement()?.setAttribute("aria-label", accessibleLabel);
         markersRef.current.set(a.id, marker);
       }
     }
@@ -813,10 +818,22 @@ function RescueDashboard() {
     <div className="flex min-h-screen flex-col bg-ocean text-foam">
       <audio ref={audioRef} src={ALARM_URL} preload="auto" />
       <style>{`
-        @keyframes sos-pulse {0%{transform:scale(0.6);opacity:1}100%{transform:scale(2.2);opacity:0}}
-        .leaflet-container{background:#e5e5e5;font-family:inherit}
-        .leaflet-control-zoom a{background:rgba(255,255,255,0.95)!important;color:#1a1a1a!important;border-color:rgba(0,0,0,0.08)!important}
-      `}</style>
+          @keyframes sos-marker-halo {0%{transform:scale(.65);opacity:.58}100%{transform:scale(2.1);opacity:0}}
+          .sos-marker-active,.sos-marker-resolved{position:relative;overflow:visible}
+          .sos-marker-active{width:44px;height:56px}
+          .sos-marker-active.sos-marker-selected{width:190px}
+          .sos-marker-halo{position:absolute;left:-7px;top:-5px;width:58px;height:58px;border-radius:50%;background:rgba(225,53,69,.42);animation:sos-marker-halo 1.7s ease-out infinite;pointer-events:none}
+          .sos-marker-halo--delayed{animation-delay:.85s}
+          .sos-marker-pin{position:absolute;inset:0 auto auto 0;width:44px;height:56px;overflow:visible}
+          .sos-marker-label{position:absolute;left:44px;top:10px;padding:4px 8px;border:2px solid #fff;border-radius:9999px;background:#111827;color:#fff;box-shadow:0 0 0 2px #080d14;font:700 11px/1.2 system-ui,sans-serif;letter-spacing:.04em;white-space:nowrap}
+          .sos-marker-resolved{width:10px;height:10px}
+          .sos-marker-resolved.sos-marker-selected{width:180px;height:20px}
+          .sos-marker-dot{position:absolute;left:1px;top:1px;width:8px;height:8px;border:2px solid #111827;border-radius:50%;background:#6b8ca0;box-shadow:0 0 0 1px #fff}
+          .sos-marker-resolved .sos-marker-label{left:16px;top:-5px}
+          @media (prefers-reduced-motion: reduce){.sos-marker-halo{animation:none;transform:scale(1.35);opacity:.48}}
+          .leaflet-container{background:#e5e5e5;font-family:inherit}
+          .leaflet-control-zoom a{background:rgba(255,255,255,0.95)!important;color:#1a1a1a!important;border-color:rgba(0,0,0,0.08)!important}
+        `}</style>
 
       {/* Emergency banner remains in document flow so it cannot cover the dashboard header. */}
       {unacknowledgedNew.length > 0 && (
@@ -1105,46 +1122,62 @@ function RescueDashboard() {
 // ── Build divIcon for a marker ─────────────────────────────────────────────
 function buildMarkerIcon(
   L: typeof import("leaflet"),
-  _a: AlertJoined,
+  alert: AlertJoined,
   isActive: boolean,
   isSelected: boolean,
 ) {
+  const label = isSelected ? getMarkerLabel(alert) : "";
+
   if (!isActive) {
     // Small grey resolved dot with white outline for contrast on light/dark maps
-    const size = isSelected ? 10 : 8;
     return L.divIcon({
       className: "",
-      html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:#6b8ca0;border:2px solid rgba(255,255,255,0.9);box-shadow:0 0 4px rgba(0,0,0,0.3)"></div>`,
-      iconSize: [size, size],
-      iconAnchor: [size / 2, size / 2],
+      html: `<div class="sos-marker-resolved${isSelected ? " sos-marker-selected" : ""}">
+        <div class="sos-marker-dot"></div>
+        ${label ? `<span class="sos-marker-label">${label}</span>` : ""}
+      </div>`,
+      iconSize: [isSelected ? 180 : 10, isSelected ? 20 : 10],
+      iconAnchor: [5, 5],
     });
   }
 
-  // Determine pulsing colors based on alert status
-  let pulseColor = "rgba(225,53,69,0.5)"; // default red
+  // Keep the marker fill aligned with the existing workflow status colors.
   let dotColor = "#e13545"; // default red
 
-  if (_a.status === "acknowledged" || _a.status === "assigned") {
-    pulseColor = "rgba(245,158,11,0.5)"; // orange/amber
+  if (alert.status === "acknowledged" || alert.status === "assigned") {
     dotColor = "#f59e0b"; // orange/amber
-  } else if (_a.status === "in_progress") {
-    pulseColor = "rgba(20,184,166,0.5)"; // cyan/teal
+  } else if (alert.status === "in_progress") {
     dotColor = "#14b8a6"; // cyan/teal
   }
 
-  const dotSize = isSelected ? 28 : 20;
-  const html = `<div style="position:relative;cursor:pointer;width:${dotSize}px;height:${dotSize}px">
-    <div style="position:absolute;inset:0;border-radius:9999px;background:${pulseColor};animation:sos-pulse 1.2s ease-out infinite"></div>
-    <div style="position:absolute;inset:0;border-radius:9999px;background:${pulseColor};animation:sos-pulse 1.2s ease-out infinite;animation-delay:.6s"></div>
-    <div style="position:absolute;inset:${Math.round(dotSize * 0.28)}px;border-radius:9999px;background:${dotColor};border:2px solid rgba(255,255,255,0.95);box-shadow:${isSelected ? "0 0 0 3px rgba(255,255,255,0.95)" : "0 0 6px rgba(0,0,0,0.4)"}"></div>
+  const html = `<div class="sos-marker-active${isSelected ? " sos-marker-selected" : ""}">
+    <div class="sos-marker-halo"></div>
+    <div class="sos-marker-halo sos-marker-halo--delayed"></div>
+    <svg class="sos-marker-pin" viewBox="0 0 44 56" aria-hidden="true">
+      <path d="M22 2C11 2 2 11 2 22c0 14 20 32 20 32s20-18 20-32C42 11 33 2 22 2Z" fill="${dotColor}" stroke="#101820" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M22 4.5C12.4 4.5 4.5 12.4 4.5 22c0 10.6 13.7 24.7 17.5 28.4C25.8 46.7 39.5 32.6 39.5 22 39.5 12.4 31.6 4.5 22 4.5Z" fill="none" stroke="#fff" stroke-width="2.2"/>
+      <circle cx="22" cy="18" r="5" fill="#fff" stroke="#101820" stroke-width="1.4"/>
+      <path d="M12.5 34v-1.4c0-5.1 4.2-9.1 9.5-9.1s9.5 4 9.5 9.1V34Z" fill="#fff" stroke="#101820" stroke-width="1.4" stroke-linejoin="round"/>
+    </svg>
+    ${label ? `<span class="sos-marker-label">${label}</span>` : ""}
   </div>`;
 
   return L.divIcon({
     className: "",
     html,
-    iconSize: [dotSize, dotSize],
-    iconAnchor: [dotSize / 2, dotSize / 2],
+    iconSize: [isSelected ? 190 : 44, 56],
+    iconAnchor: [22, 54],
   });
+}
+
+function getMarkerLabel(alert: AlertJoined) {
+  const detail = alert.emergency_level ?? ALERT_STATUS_LABEL[alert.status].toUpperCase();
+  return `SOS · ${detail}`;
+}
+
+function getMarkerAccessibleLabel(alert: AlertJoined) {
+  const severity = alert.emergency_level ? `, ${alert.emergency_level} severity` : "";
+  return `SOS alert${severity}, ${ALERT_STATUS_LABEL[alert.status]}`;
 }
 
 // ── Detail panel (right-side slide-in) ────────────────────────────────────
