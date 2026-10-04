@@ -1546,7 +1546,7 @@ function EmergencyBanner({
   onView: () => void;
 }) {
   return (
-    <div className="border-b-2 border-distress bg-distress px-4 py-3 text-foam shadow-2xl sm:px-6">
+    <div className="border-b-2 border-distress bg-distress px-4 py-3 text-white shadow-2xl sm:px-6">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3">
         <div className="flex min-w-0 flex-1 basis-64 items-center gap-4">
           <Siren className="h-6 w-6 shrink-0 animate-pulse" />
@@ -1574,7 +1574,7 @@ function EmergencyBanner({
           </button>
           <button
             onClick={onAcknowledge}
-            className="rounded-lg bg-foam px-2.5 py-1.5 text-xs font-semibold text-distress hover:bg-foam/90 sm:px-3"
+            className="rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-50 sm:px-3"
           >
             Acknowledge all
           </button>
@@ -1588,7 +1588,7 @@ function EmergencyBanner({
           ) : (
             <button
               onClick={onMute}
-              className={`rounded-lg border border-foam/40 px-2.5 py-1.5 text-xs hover:bg-foam/10 sm:px-3 ${muted ? "opacity-50" : ""}`}
+              className={`rounded-lg border border-white/50 px-2.5 py-1.5 text-xs text-white hover:bg-white/10 sm:px-3 ${muted ? "bg-white/10" : ""}`}
             >
               {muted ? "Muted" : "Mute alarm"}
             </button>
