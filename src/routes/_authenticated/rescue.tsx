@@ -1220,11 +1220,11 @@ function DetailPanel({
           )}
         </div>
         <div className="flex items-center gap-3">
-          <div className="text-[11px] text-foam/50">
+          <div className="text-[11px] text-muted-foreground">
             {fmtDuration(now - new Date(alert.started_at).getTime())}
           </div>
           <button onClick={onClose} className="rounded-md p-1 hover:bg-foam/10" aria-label="Close">
-            <X className="h-4 w-4 text-foam/60" />
+            <X className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
       </div>
@@ -1242,7 +1242,7 @@ function DetailPanel({
             )}
             {alert.battery != null && (
               <span
-                className={`rounded-md border border-foam/15 px-2 py-0.5 tabular-nums ${alert.battery < 20 ? "text-distress" : "text-foam/70"}`}
+                className={`rounded-md border border-foam/15 px-2 py-0.5 tabular-nums ${alert.battery < 20 ? "text-distress" : "text-muted-foreground"}`}
               >
                 🔋 {alert.battery}%
               </span>
@@ -1252,7 +1252,7 @@ function DetailPanel({
 
         <div>
           <div className="text-lg font-semibold">{alert.boat?.name ?? "Unknown vessel"}</div>
-          <div className="text-xs text-foam/60">
+          <div className="text-xs text-muted-foreground">
             {alert.boat?.registration_number && (
               <span className="font-mono">{alert.boat.registration_number}</span>
             )}
@@ -1261,15 +1261,19 @@ function DetailPanel({
         </div>
 
         <div className="rounded-lg border border-foam/10 bg-foam/[0.03] p-3 text-xs">
-          <div className="text-[10px] uppercase tracking-wider text-foam/40">Captain</div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Captain</div>
           <div className="mt-0.5 font-medium">{alert.fisherman?.full_name ?? "Unknown"}</div>
-          {alert.fisherman?.phone && <div className="text-foam/60">{alert.fisherman.phone}</div>}
+          {alert.fisherman?.phone && (
+            <div className="text-muted-foreground">{alert.fisherman.phone}</div>
+          )}
           {alert.fisherman?.national_id && (
-            <div className="text-foam/40 text-[10px]">ID {alert.fisherman.national_id}</div>
+            <div className="text-muted-foreground text-[10px]">
+              ID {alert.fisherman.national_id}
+            </div>
           )}
         </div>
 
-        <div className="text-[11px] text-foam/40">
+        <div className="text-[11px] text-muted-foreground">
           BMU: {alert.bmu?.name ?? "—"} · Device:{" "}
           <span className="font-mono text-tide">{alert.device?.device_id}</span>
         </div>
@@ -1277,7 +1281,7 @@ function DetailPanel({
         {/* Crew members */}
         {detailCrew.length > 0 && (
           <div className="rounded-lg border border-foam/10 bg-foam/[0.03] p-3 text-xs space-y-2">
-            <div className="text-[10px] uppercase tracking-wider text-foam/40 flex items-center gap-1.5">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
               <Ship className="h-3 w-3" />
               Crew aboard ({detailCrew.length})
             </div>
@@ -1297,7 +1301,7 @@ function DetailPanel({
                   )}
                 </div>
                 {member.role && (
-                  <span className="shrink-0 rounded border border-foam/15 px-1.5 py-0.5 text-[10px] text-foam/50">
+                  <span className="shrink-0 rounded border border-foam/15 px-1.5 py-0.5 text-[10px] text-muted-foreground">
                     {member.role}
                   </span>
                 )}
@@ -1339,7 +1343,7 @@ function DetailPanel({
 
           return (
             <div className="rounded-lg border border-foam/10 bg-foam/[0.03] p-3 text-xs space-y-2">
-              <div className="text-[10px] uppercase tracking-wider text-foam/40 flex items-center gap-1.5">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <Anchor className="h-3 w-3" />
                 Nearest BMU
               </div>
@@ -1348,7 +1352,7 @@ function DetailPanel({
                 <div>
                   <div className="font-semibold text-tide">{nearest.name}</div>
                   {nearest.region && (
-                    <div className="text-[10px] text-foam/50">{nearest.region}</div>
+                    <div className="text-[10px] text-muted-foreground">{nearest.region}</div>
                   )}
                 </div>
                 <div className="text-right">
@@ -1357,12 +1361,12 @@ function DetailPanel({
                       ? `${Math.round(nearest.distKm * 1000)} m`
                       : `${nearest.distKm.toFixed(1)} km`}
                   </div>
-                  <div className="text-[10px] text-foam/40">closest</div>
+                  <div className="text-[10px] text-muted-foreground">closest</div>
                 </div>
               </div>
               {/* Other BMUs */}
               {located.slice(1, 4).map((b) => (
-                <div key={b.id} className="flex items-center justify-between text-foam/60">
+                <div key={b.id} className="flex items-center justify-between text-muted-foreground">
                   <span>{b.name}</span>
                   <span className="font-mono">
                     {b.distKm < 1
@@ -1376,7 +1380,7 @@ function DetailPanel({
         })()}
 
         {detailTrail.length > 0 && (
-          <div className="flex items-center gap-2 text-[11px] text-foam/50 flex-wrap">
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
             <Navigation className="h-3 w-3 text-tide" />
             <span>Live tracking {detailFollowLive ? "on" : "off"}</span>
             <button
@@ -1395,8 +1399,8 @@ function DetailPanel({
         )}
 
         {alert.fisherman?.emergency_contact_phone && (
-          <div className="rounded-lg border border-foam/10 bg-foam/[0.04] p-2 text-[11px] text-foam/70">
-            <div className="uppercase tracking-wider text-foam/40">Emergency contact</div>
+          <div className="rounded-lg border border-foam/10 bg-foam/[0.04] p-2 text-[11px] text-muted-foreground">
+            <div className="uppercase tracking-wider">Emergency contact</div>
             <div>
               {alert.fisherman.emergency_contact_name ?? "—"} ·{" "}
               {alert.fisherman.emergency_contact_phone}
@@ -1413,7 +1417,7 @@ function DetailPanel({
 
         {/* Rescue operation panel */}
         <div className="border-t border-foam/10 pt-4">
-          <div className="mb-2 text-[10px] uppercase tracking-wider text-foam/40">
+          <div className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
             Rescue Operation
           </div>
           {detailRescueOp ? (
@@ -1423,15 +1427,15 @@ function DetailPanel({
                   <span className="font-semibold text-tide">
                     {detailRescueOp.team_name ?? "Team assigned"}
                   </span>
-                  <span className="text-foam/40">
+                  <span className="text-muted-foreground">
                     {detailRescueOp.ended_at ? "Closed" : "Active"}
                   </span>
                 </div>
-                <div className="mt-1 text-foam/60">
+                <div className="mt-1 text-muted-foreground">
                   Started: {new Date(detailRescueOp.started_at).toLocaleString()}
                 </div>
                 {detailRescueOp.ended_at && (
-                  <div className="text-foam/60">
+                  <div className="text-muted-foreground">
                     Ended: {new Date(detailRescueOp.ended_at).toLocaleString()}
                   </div>
                 )}
@@ -1479,12 +1483,14 @@ function DetailPanel({
               </button>
             </div>
           ) : (
-            <div className="text-xs text-foam/40">Alert resolved — no active rescue operation.</div>
+            <div className="text-xs text-muted-foreground">
+              Alert resolved — no active rescue operation.
+            </div>
           )}
         </div>
 
         <div className="pb-4">
-          <div className="mb-1 text-[10px] uppercase tracking-wider text-foam/40">
+          <div className="mb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
             Rescue workflow
           </div>
           <select
@@ -1617,7 +1623,7 @@ function EmergencyBanner({
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-foam/40">{label}</div>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className="font-mono tabular-nums text-foam">{value}</div>
     </div>
   );
