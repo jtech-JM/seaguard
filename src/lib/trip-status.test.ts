@@ -7,6 +7,10 @@ test("allows the core BMU approval transition", () => {
   assert.equal(canTransitionTripStatus("pending_approval", "cancelled"), true);
 });
 
+test("allows a BMU officer to record an overdue trip as returned", () => {
+  assert.equal(canTransitionTripStatus("overdue", "returned"), true);
+});
+
 test("disallows invalid transitions", () => {
   assert.equal(canTransitionTripStatus("at_sea", "pending_approval"), false);
   assert.equal(canTransitionTripStatus("returned", "at_sea"), false);

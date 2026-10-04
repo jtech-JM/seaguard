@@ -9,6 +9,7 @@ export const TRIP_STATUS_TRANSITIONS: TripStatusTransition[] = [
   { from: "at_sea", to: "returned" },
   { from: "at_sea", to: "sos" },
   { from: "at_sea", to: "overdue" },
+  { from: "overdue", to: "returned" },
   { from: "sos", to: "rescue_in_progress" },
   { from: "sos", to: "at_sea" },
   { from: "rescue_in_progress", to: "rescued" },
