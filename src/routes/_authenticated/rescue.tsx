@@ -1250,6 +1250,12 @@ function DetailPanel({
           </div>
         )}
 
+        {alert.battery != null && alert.battery < 20 && (
+          <div className="rounded-lg border border-distress/40 bg-distress/10 px-3 py-2 text-[11px] text-distress">
+            ⚠️ Low battery: {alert.battery}% — device may stop transmitting soon.
+          </div>
+        )}
+
         <div>
           <div className="text-lg font-semibold">{alert.boat?.name ?? "Unknown vessel"}</div>
           <div className="text-xs text-muted-foreground">
@@ -1273,42 +1279,20 @@ function DetailPanel({
           )}
         </div>
 
+        {alert.fisherman?.emergency_contact_phone && (
+          <div className="rounded-lg border border-foam/10 bg-foam/[0.04] p-2 text-[11px] text-muted-foreground">
+            <div className="uppercase tracking-wider">Emergency contact</div>
+            <div>
+              {alert.fisherman.emergency_contact_name ?? "—"} ·{" "}
+              {alert.fisherman.emergency_contact_phone}
+            </div>
+          </div>
+        )}
+
         <div className="text-[11px] text-muted-foreground">
           BMU: {alert.bmu?.name ?? "—"} · Device:{" "}
           <span className="font-mono text-tide">{alert.device?.device_id}</span>
         </div>
-
-        {/* Crew members */}
-        {detailCrew.length > 0 && (
-          <div className="rounded-lg border border-foam/10 bg-foam/[0.03] p-3 text-xs space-y-2">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <Ship className="h-3 w-3" />
-              Crew aboard ({detailCrew.length})
-            </div>
-            {detailCrew.map((member) => (
-              <div key={member.id} className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="font-medium text-foam">
-                    {member.fisherman?.full_name ?? "Unknown"}
-                  </div>
-                  {member.fisherman?.phone && (
-                    <a
-                      href={`tel:${member.fisherman.phone}`}
-                      className="text-tide hover:underline text-[10px]"
-                    >
-                      {member.fisherman.phone}
-                    </a>
-                  )}
-                </div>
-                {member.role && (
-                  <span className="shrink-0 rounded border border-foam/15 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {member.role}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
 
         <div className="grid grid-cols-2 gap-3 text-xs">
           <Stat label="Latitude" value={live ? live.lat.toFixed(5) : "—"} />
@@ -1398,20 +1382,35 @@ function DetailPanel({
           </div>
         )}
 
-        {alert.fisherman?.emergency_contact_phone && (
-          <div className="rounded-lg border border-foam/10 bg-foam/[0.04] p-2 text-[11px] text-muted-foreground">
-            <div className="uppercase tracking-wider">Emergency contact</div>
-            <div>
-              {alert.fisherman.emergency_contact_name ?? "—"} ·{" "}
-              {alert.fisherman.emergency_contact_phone}
+        {/* Crew details follow the location and nearest response unit information. */}
+        {detailCrew.length > 0 && (
+          <div className="rounded-lg border border-foam/10 bg-foam/[0.03] p-3 text-xs space-y-2">
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Ship className="h-3 w-3" />
+              Crew aboard ({detailCrew.length})
             </div>
-          </div>
-        )}
-
-        {/* Low battery warning */}
-        {alert.battery != null && alert.battery < 20 && (
-          <div className="rounded-lg border border-distress/40 bg-distress/10 px-3 py-2 text-[11px] text-distress">
-            ⚠️ Low battery: {alert.battery}% — device may stop transmitting soon.
+            {detailCrew.map((member) => (
+              <div key={member.id} className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="font-medium text-foam">
+                    {member.fisherman?.full_name ?? "Unknown"}
+                  </div>
+                  {member.fisherman?.phone && (
+                    <a
+                      href={`tel:${member.fisherman.phone}`}
+                      className="text-tide hover:underline text-[10px]"
+                    >
+                      {member.fisherman.phone}
+                    </a>
+                  )}
+                </div>
+                {member.role && (
+                  <span className="shrink-0 rounded border border-foam/15 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {member.role}
+                  </span>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
