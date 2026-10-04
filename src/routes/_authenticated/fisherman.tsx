@@ -396,7 +396,9 @@ function FishermanPortal() {
             <LifeBuoy className="h-4 w-4 text-tide" />
           </div>
           <div>
-            <div className="text-[11px] uppercase tracking-[0.2em] text-foam/50">Fisherman</div>
+            <div className="text-[11px] font-medium uppercase tracking-[0.2em] text-foam/70">
+              Fisherman
+            </div>
             <div className="text-sm font-semibold">{profile?.full_name ?? "Portal"}</div>
           </div>
         </div>
@@ -443,7 +445,7 @@ function FishermanPortal() {
             <div className="text-sm font-semibold text-yellow-300">
               Account not linked to a fisherman record
             </div>
-            <p className="mt-2 text-sm text-foam/70">
+            <p className="mt-2 text-sm text-foam/80">
               Your BMU officer needs to link your account to your fisherman registration in the BMU
               console.
             </p>
@@ -454,22 +456,22 @@ function FishermanPortal() {
               {boat ? (
                 <>
                   <div className="text-lg font-semibold">{boat.name}</div>
-                  <div className="mt-1 text-xs text-foam/60">{boat.boat_type ?? "—"}</div>
+                  <div className="mt-1 text-xs text-foam/75">{boat.boat_type ?? "—"}</div>
                   {boat.registration_number && (
-                    <div className="mt-1 font-mono text-[11px] text-foam/40">
+                    <div className="mt-1 font-mono text-[11px] text-foam/65">
                       {boat.registration_number}
                     </div>
                   )}
                 </>
               ) : (
-                <div className="text-sm text-foam/50">No boat assigned</div>
+                <div className="text-sm text-foam/70">No boat assigned</div>
               )}
             </Panel>
             <Panel label="SOS Device" icon={<Radio className="h-4 w-4 text-distress" />}>
               {device ? (
                 <>
                   <div className="font-mono text-sm">{device.device_id}</div>
-                  <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-foam/60">
+                  <div className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-foam/75">
                     <span
                       className={`h-1.5 w-1.5 rounded-full ${
                         device.last_seen_at &&
@@ -505,12 +507,12 @@ function FishermanPortal() {
                   )}
                 </>
               ) : (
-                <div className="text-sm text-foam/50">No device assigned</div>
+                <div className="text-sm text-foam/70">No device assigned</div>
               )}
             </Panel>
             <Panel label="BMU" icon={<Anchor className="h-4 w-4 text-foam" />}>
               <div className="text-lg font-semibold">{fisherman?.bmu?.name ?? "—"}</div>
-              <div className="mt-1 text-xs text-foam/60">{fisherman?.national_id ?? ""}</div>
+              <div className="mt-1 text-xs text-foam/75">{fisherman?.national_id ?? ""}</div>
             </Panel>
           </div>
         )}
@@ -524,7 +526,7 @@ function FishermanPortal() {
                     ? "border-yellow-500/30 bg-yellow-500/5"
                     : activeTrip.status === "at_sea"
                       ? "border-tide/30 bg-tide/10"
-                      : "border-foam/10 bg-foam/[0.03]"
+                      : "border-foam/15 bg-foam/[0.03]"
                 }`}
               >
                 <div
@@ -533,7 +535,7 @@ function FishermanPortal() {
                       ? "text-yellow-300"
                       : activeTrip.status === "at_sea"
                         ? "text-tide"
-                        : "text-foam/60"
+                        : "text-foam/75"
                   }`}
                 >
                   {activeTripIsCaptain ? "Captain trip" : "Crew trip"} ·{" "}
@@ -543,24 +545,24 @@ function FishermanPortal() {
                   {activeTrip.destination ?? "At sea"}
                 </div>
                 {activeTripIsCrew && (
-                  <div className="mt-1 text-sm text-foam/70">
+                  <div className="mt-1 text-sm text-foam/80">
                     Captain: {activeTrip.captain?.full_name ?? "Unknown"}
                     {activeTrip.captain?.phone ? ` · ${activeTrip.captain.phone}` : ""}
                   </div>
                 )}
                 {activeTrip.boat && (
-                  <div className="mt-1 text-sm text-foam/70">
+                  <div className="mt-1 text-sm text-foam/80">
                     Boat: {activeTrip.boat.name}
                     {activeTrip.boat.registration_number ? ` · ${activeTrip.boat.registration_number}` : ""}
                   </div>
                 )}
-                <div className="mt-1 text-sm text-foam/70">
+                <div className="mt-1 text-sm text-foam/80">
                   Departed:{" "}
                   {activeTrip.actual_departure
                     ? new Date(activeTrip.actual_departure).toLocaleString()
                     : "Pending"}
                 </div>
-                <div className="text-sm text-foam/70">
+                <div className="text-sm text-foam/80">
                   Expected return:{" "}
                   {activeTrip.expected_return
                     ? new Date(activeTrip.expected_return).toLocaleString()
@@ -568,20 +570,20 @@ function FishermanPortal() {
                 </div>
 
                 {activeTrip.crew && activeTrip.crew.length > 0 && (
-                  <div className="mt-3 flex items-center gap-2 text-xs text-foam/60">
+                  <div className="mt-3 flex items-center gap-2 text-xs text-foam/75">
                     <Users className="h-3.5 w-3.5" />
                     Crew: {activeTrip.crew.map((c) => c.fisherman?.full_name ?? "—").join(", ")}
                   </div>
                 )}
 
                 {activeTripIsCrew ? (
-                  <div className="mt-4 rounded-xl border border-foam/10 bg-ocean/30 p-3 text-xs text-foam/70">
+                  <div className="mt-4 rounded-xl border border-foam/15 bg-ocean/30 p-3 text-xs text-foam/80">
                     You are listed as crew on this trip. The captain manages trip cancellation,
                     SOS, and check-in for the vessel.
                   </div>
                 ) : activeTrip.status === "pending_approval" ? (
                   <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <div className="text-xs text-yellow-300/80">
+                    <div className="text-xs text-yellow-200">
                       Waiting for BMU officer approval before departure.
                     </div>
                     <button
@@ -601,7 +603,7 @@ function FishermanPortal() {
                     <LogIn className="h-4 w-4" /> Check in — I'm back
                   </button>
                 ) : (
-                  <div className="mt-4 text-xs text-foam/70">
+                  <div className="mt-4 text-xs text-foam/80">
                     This trip cannot be checked in while it is in{" "}
                     {TRIP_STATUS_LABEL[activeTrip.status].toLowerCase()} status. The SOS or rescue
                     incident must be resolved first.
@@ -609,9 +611,9 @@ function FishermanPortal() {
                 )}
               </div>
             ) : (
-              <div className="rounded-2xl border border-foam/10 bg-foam/[0.03] p-6">
+              <div className="rounded-2xl border border-foam/15 bg-foam/[0.03] p-6">
                 <div className="text-sm font-semibold">Request a new trip</div>
-                <p className="mt-1 text-xs text-foam/50">
+                <p className="mt-1 text-xs text-foam/70">
                   Submitted to your BMU officer for approval before departure.
                 </p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -639,7 +641,7 @@ function FishermanPortal() {
 
                   {allFishermen.length > 0 && (
                     <div className="sm:col-span-2">
-                      <span className="text-[11px] uppercase tracking-wider text-foam/50">
+                      <span className="text-[11px] font-medium uppercase tracking-wider text-foam/70">
                         Select Crew Members
                       </span>
                       <div className="mt-1.5 grid grid-cols-2 gap-2 max-h-36 overflow-y-auto rounded-lg border border-foam/10 bg-ocean/40 p-3">
@@ -648,7 +650,7 @@ function FishermanPortal() {
                           return (
                             <label
                               key={f.id}
-                              className="flex items-center gap-2 text-xs text-foam/80 hover:text-foam cursor-pointer"
+                              className="flex items-center gap-2 text-xs text-foam/90 hover:text-foam cursor-pointer"
                             >
                               <input
                                 type="checkbox"
@@ -689,9 +691,9 @@ function FishermanPortal() {
 
         <div className="mt-8">
           <div className="mb-3 text-sm font-semibold">Trip history</div>
-          <div className="overflow-hidden rounded-2xl border border-foam/10">
+          <div className="overflow-hidden rounded-2xl border border-foam/15">
             <table className="w-full text-left text-xs">
-              <thead className="bg-foam/[0.04] text-[10px] uppercase tracking-wider text-foam/50">
+              <thead className="bg-foam/[0.04] text-[10px] font-semibold uppercase tracking-wider text-foam/70">
                 <tr>
                   <th className="px-4 py-2">Status</th>
                   <th className="px-4 py-2">Destination</th>
@@ -700,10 +702,10 @@ function FishermanPortal() {
                   <th className="px-4 py-2">Crew</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-foam/5">
+              <tbody className="divide-y divide-foam/10">
                 {trips.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-foam/50">
+                    <td colSpan={5} className="px-4 py-6 text-center text-foam/70">
                       No trips yet
                     </td>
                   </tr>
@@ -725,7 +727,7 @@ function FishermanPortal() {
                                 ? "bg-yellow-500/15 text-yellow-300"
                                 : tone === "tide"
                                   ? "bg-tide/15 text-tide"
-                                  : "bg-foam/10 text-foam/60"
+                                  : "bg-foam/10 text-foam/75"
                           }`}
                         >
                           {TRIP_STATUS_LABEL[t.status]}
@@ -738,7 +740,7 @@ function FishermanPortal() {
                       <td className="px-4 py-2">
                         {t.actual_return ? new Date(t.actual_return).toLocaleString() : "—"}
                       </td>
-                      <td className="px-4 py-2 text-foam/50">{t.crew?.length ?? 0}</td>
+                      <td className="px-4 py-2 text-foam/75">{t.crew?.length ?? 0}</td>
                     </tr>
                   );
                 })}
@@ -759,7 +761,7 @@ function TripDetailModal({ trip, onClose }: { trip: Trip; onClose: () => void })
       <div className="w-full max-w-md rounded-2xl border border-foam/15 bg-ocean p-5 text-foam">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-base font-semibold">Trip Detail</h3>
-          <button onClick={onClose} className="rounded p-1 text-foam/60 hover:bg-foam/10">
+          <button onClick={onClose} className="rounded p-1 text-foam/75 hover:bg-foam/10">
             ✕
           </button>
         </div>
@@ -786,13 +788,15 @@ function TripDetailModal({ trip, onClose }: { trip: Trip; onClose: () => void })
           {trip.notes && <Row label="Notes" value={trip.notes} />}
           {trip.crew && trip.crew.length > 0 && (
             <div>
-              <div className="text-[11px] uppercase tracking-wider text-foam/50 mb-1">Crew</div>
+              <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-foam/70">
+                Crew
+              </div>
               <ul className="space-y-1">
                 {trip.crew.map((c) => (
-                  <li key={c.id} className="flex items-center gap-2 text-foam/70">
-                    <Users className="h-3 w-3 text-foam/40" />
+                  <li key={c.id} className="flex items-center gap-2 text-foam/80">
+                    <Users className="h-3 w-3 text-foam/65" />
                     {c.fisherman?.full_name ?? c.fisherman_id}
-                    {c.role && <span className="text-foam/40">· {c.role}</span>}
+                    {c.role && <span className="text-foam/65">· {c.role}</span>}
                   </li>
                 ))}
               </ul>
@@ -807,7 +811,7 @@ function TripDetailModal({ trip, onClose }: { trip: Trip; onClose: () => void })
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4">
-      <span className="text-[11px] uppercase tracking-wider text-foam/40 shrink-0">{label}</span>
+      <span className="text-[11px] font-medium uppercase tracking-wider text-foam/65 shrink-0">{label}</span>
       <span className="text-foam/80 text-right">{value}</span>
     </div>
   );
@@ -823,8 +827,8 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-foam/10 bg-foam/[0.03] p-5">
-      <div className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-foam/50">
+    <div className="rounded-2xl border border-foam/15 bg-foam/[0.03] p-5">
+      <div className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-foam/70">
         {icon}
         {label}
       </div>
@@ -846,12 +850,12 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] uppercase tracking-wider text-foam/50">{label}</span>
+      <span className="text-[11px] font-medium uppercase tracking-wider text-foam/70">{label}</span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-lg border border-foam/10 bg-ocean/40 px-3 py-2 text-sm text-foam outline-none focus:border-tide/60"
+        className="mt-1 w-full rounded-lg border border-foam/20 bg-ocean/40 px-3 py-2 text-sm text-foam outline-none focus:border-tide focus:ring-2 focus:ring-tide/30"
       />
     </label>
   );
