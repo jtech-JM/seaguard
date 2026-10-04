@@ -819,7 +819,7 @@ function RescueDashboard() {
         .leaflet-control-zoom a{background:rgba(255,255,255,0.95)!important;color:#1a1a1a!important;border-color:rgba(0,0,0,0.08)!important}
       `}</style>
 
-      {/* Full-screen emergency banner */}
+      {/* Emergency banner remains in document flow so it cannot cover the dashboard header. */}
       {unacknowledgedNew.length > 0 && (
         <EmergencyBanner
           count={unacknowledgedNew.length}
@@ -1048,13 +1048,11 @@ function RescueDashboard() {
 
         {/* Right-side detail panel */}
         <div
-          className={`fixed right-0 z-[400] flex flex-col border-l border-foam/10 bg-ocean/95 backdrop-blur-md transition-transform duration-300 ease-in-out
+          className={`absolute inset-y-0 right-0 z-[400] flex flex-col border-l border-foam/10 bg-ocean/95 backdrop-blur-md transition-transform duration-300 ease-in-out
             ${panelOpen ? "translate-x-0" : "translate-x-full"}
           `}
           style={{
-            top: "var(--rescue-panel-top, 0px)",
-            bottom: 0,
-            width: "clamp(320px, 380px, 100vw)",
+            width: "min(380px, 100%)",
           }}
         >
           {panelOpen && selected && (
@@ -1549,50 +1547,54 @@ function EmergencyBanner({
   onView: () => void;
 }) {
   return (
-    <div className="fixed inset-x-0 top-0 z-[1000] border-b-2 border-distress bg-distress/95 px-6 py-3 text-foam shadow-2xl animate-[flash_1s_ease-in-out_infinite]">
-      <div className="mx-auto flex max-w-7xl items-center gap-4">
-        <Siren className="h-6 w-6 animate-pulse" />
-        <div className="flex-1">
-          <div className="text-[11px] uppercase tracking-[0.2em] opacity-80">
-            {count > 1 ? `${count} NEW SOS INCIDENTS` : "NEW SOS INCIDENT"}
-          </div>
-          <div className="text-base font-semibold">
-            {topAlert.boat?.name ?? "Unknown vessel"} ·{" "}
-            {topAlert.fisherman?.full_name ?? "Unknown captain"}
-            {topAlert.emergency_level && (
-              <span className="ml-2 rounded bg-black/25 px-1.5 py-0.5 text-[10px]">
-                {topAlert.emergency_level}
-              </span>
-            )}
+    <div className="border-b-2 border-distress bg-distress/95 px-4 py-3 text-foam shadow-2xl animate-[flash_1s_ease-in-out_infinite] sm:px-6">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3">
+        <div className="flex min-w-0 flex-1 basis-64 items-center gap-4">
+          <Siren className="h-6 w-6 shrink-0 animate-pulse" />
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-[0.2em] opacity-80">
+              {count > 1 ? `${count} NEW SOS INCIDENTS` : "NEW SOS INCIDENT"}
+            </div>
+            <div className="text-base font-semibold">
+              {topAlert.boat?.name ?? "Unknown vessel"} ·{" "}
+              {topAlert.fisherman?.full_name ?? "Unknown captain"}
+              {topAlert.emergency_level && (
+                <span className="ml-2 rounded bg-black/25 px-1.5 py-0.5 text-[10px]">
+                  {topAlert.emergency_level}
+                </span>
+              )}
+            </div>
           </div>
         </div>
-        <button
-          onClick={onView}
-          className="rounded-lg bg-black/30 px-3 py-1.5 text-xs font-semibold hover:bg-black/40"
-        >
-          View incident
-        </button>
-        <button
-          onClick={onAcknowledge}
-          className="rounded-lg bg-foam px-3 py-1.5 text-xs font-semibold text-distress hover:bg-foam/90"
-        >
-          Acknowledge all
-        </button>
-        {!audioReady ? (
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <button
-            onClick={onEnableAudio}
-            className="inline-flex animate-bounce items-center gap-1.5 rounded-lg bg-yellow-400 px-3 py-1.5 text-xs font-bold text-black hover:bg-yellow-300"
+            onClick={onView}
+            className="rounded-lg bg-black/30 px-2.5 py-1.5 text-xs font-semibold hover:bg-black/40 sm:px-3"
           >
-            <Volume2 className="h-3.5 w-3.5" /> Enable sound
+            View incident
           </button>
-        ) : (
           <button
-            onClick={onMute}
-            className={`rounded-lg border border-foam/40 px-3 py-1.5 text-xs hover:bg-foam/10 ${muted ? "opacity-50" : ""}`}
+            onClick={onAcknowledge}
+            className="rounded-lg bg-foam px-2.5 py-1.5 text-xs font-semibold text-distress hover:bg-foam/90 sm:px-3"
           >
-            {muted ? "Muted" : "Mute alarm"}
+            Acknowledge all
           </button>
-        )}
+          {!audioReady ? (
+            <button
+              onClick={onEnableAudio}
+              className="inline-flex animate-bounce items-center gap-1.5 rounded-lg bg-yellow-400 px-2.5 py-1.5 text-xs font-bold text-black hover:bg-yellow-300 sm:px-3"
+            >
+              <Volume2 className="h-3.5 w-3.5" /> Enable sound
+            </button>
+          ) : (
+            <button
+              onClick={onMute}
+              className={`rounded-lg border border-foam/40 px-2.5 py-1.5 text-xs hover:bg-foam/10 sm:px-3 ${muted ? "opacity-50" : ""}`}
+            >
+              {muted ? "Muted" : "Mute alarm"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
