@@ -427,16 +427,16 @@ function FishermanPortal() {
 
       <div className="mx-auto max-w-5xl px-6 py-8">
         {activeAlert && (
-          <div className="mb-6 rounded-2xl border border-distress/40 bg-distress/15 p-6 animate-pulse">
+          <div className="mb-6 rounded-2xl border border-red-700/40 border-l-4 bg-red-50/80 p-6 dark:border-red-300/35 dark:border-l-red-300 dark:bg-red-950/35">
             <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-lg bg-distress/35">
-                <Radio className="h-5 w-5 text-foam animate-bounce" />
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-red-100 dark:bg-red-400/15">
+                <Radio className="h-5 w-5 text-red-800 dark:text-red-200" />
               </span>
               <div className="flex-1">
-                <div className="text-sm font-semibold uppercase tracking-wider text-distress">
+                <div className="text-sm font-bold uppercase tracking-wider text-red-800 dark:text-red-200">
                   EMERGENCY SOS DISTRESS ACTIVE
                 </div>
-                <p className="mt-1 text-xs text-foam/80">
+                <p className="mt-1 text-sm text-foam/90">
                   A distress signal has been sent to the rescue coordination command center. They
                   are tracking your live GPS location.
                 </p>
@@ -444,7 +444,7 @@ function FishermanPortal() {
               <button
                 onClick={cancelSoftwareSos}
                 disabled={busy}
-                className="rounded-lg bg-foam px-4 py-2 text-xs font-semibold text-distress hover:bg-foam/90 disabled:opacity-60 transition"
+                className="rounded-lg border border-red-800/20 bg-foam px-4 py-2 text-sm font-semibold text-red-800 transition hover:bg-foam/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-700 focus-visible:ring-offset-2 focus-visible:ring-offset-ocean disabled:opacity-60 dark:text-red-800"
               >
                 Cancel SOS
               </button>
@@ -541,7 +541,9 @@ function FishermanPortal() {
             {activeTrip ? (
               <div
                 className={`rounded-2xl border p-6 ${
-                  activeTrip.status === "pending_approval"
+                  tripTone(activeTrip.status) === "distress"
+                    ? "border-red-700/35 bg-red-50/60 dark:border-red-300/25 dark:bg-red-950/20"
+                    : activeTrip.status === "pending_approval"
                     ? "border-yellow-500/30 bg-yellow-500/5"
                     : activeTrip.status === "at_sea"
                       ? "border-tide/30 bg-tide/10"
@@ -550,11 +552,13 @@ function FishermanPortal() {
               >
                 <div
                   className={`text-[11px] uppercase tracking-wider ${
-                    activeTrip.status === "pending_approval"
+                    tripTone(activeTrip.status) === "distress"
+                      ? "font-bold text-red-800 dark:text-red-200"
+                      : activeTrip.status === "pending_approval"
                       ? "text-yellow-300"
                       : activeTrip.status === "at_sea"
                         ? "text-tide"
-                        : "text-foam/75"
+                        : "text-foam/90"
                   }`}
                 >
                   {activeTripIsCaptain ? "Captain trip" : "Crew trip"} ·{" "}
@@ -589,7 +593,7 @@ function FishermanPortal() {
                 </div>
 
                 {activeTrip.crew && activeTrip.crew.length > 0 && (
-                  <div className="mt-3 flex items-center gap-2 text-xs text-foam/75">
+                  <div className="mt-3 flex items-center gap-2 text-sm text-foam/90">
                     <Users className="h-3.5 w-3.5" />
                     Crew: {activeTrip.crew.map((c) => c.fisherman?.full_name ?? "—").join(", ")}
                   </div>
