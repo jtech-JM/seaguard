@@ -1116,7 +1116,7 @@ function RescueDashboard() {
       </header>
 
       {/* Stats bar */}
-      <div className="relative z-10 grid grid-cols-2 gap-px border-b border-foam/10 bg-ocean sm:grid-cols-4 lg:grid-cols-6">
+      <div className="relative z-10 grid grid-cols-2 gap-px border-b border-foam/10 bg-ocean sm:grid-cols-4 lg:grid-cols-7">
         <StatCell
           label="Active SOS"
           value={activeCount}
@@ -1159,6 +1159,25 @@ function RescueDashboard() {
           icon={<CheckCircle2 className="h-3.5 w-3.5" />}
           onClick={() => void showMetricDetails("resolved")}
         />
+        <button
+          type="button"
+          onClick={() => navigate({ to: "/rescue/incidents" as any })}
+          aria-label={`All incidents. ${activeCount} active. Open incident list`}
+          className="group bg-ocean px-4 py-3 text-left transition-colors hover:bg-foam/[0.06] focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-tide"
+        >
+          <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-tide">
+            <ClipboardList className="h-3.5 w-3.5" />
+            All Incidents
+          </span>
+          <span className="mt-1 flex items-center gap-2 text-sm font-semibold text-foam">
+            Open incident list
+            {activeCount > 0 && (
+              <span className="rounded-full bg-distress px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {activeCount}
+              </span>
+            )}
+          </span>
+        </button>
       </div>
 
       {metricDetails && (
@@ -1238,22 +1257,6 @@ function RescueDashboard() {
       <div className="relative flex-1">
         {/* Map fills 100% */}
         <div ref={mapElRef} className="absolute inset-0 bg-[#e5e5e5]" />
-
-        {/* Bottom-left pill: Incidents button */}
-        <div className="absolute bottom-6 left-6 z-[500]">
-          <button
-            onClick={() => navigate({ to: "/rescue/incidents" as any })}
-            className="inline-flex items-center gap-2 rounded-full border border-foam/20 bg-ocean/90 px-4 py-2.5 text-sm font-semibold text-foam shadow-lg backdrop-blur-md hover:bg-foam/10 transition"
-          >
-            <ClipboardList className="h-4 w-4 text-tide" />
-            Incidents
-            {activeCount > 0 && (
-              <span className="ml-0.5 rounded-full bg-distress px-1.5 py-0.5 text-[10px] font-bold text-white">
-                {activeCount}
-              </span>
-            )}
-          </button>
-        </div>
 
         {/* Top-right map controls */}
         <div
