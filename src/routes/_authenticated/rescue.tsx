@@ -140,6 +140,11 @@ function RescueDashboard() {
     if (!selectedBmuId) return alerts;
     return alerts.filter((a) => a.bmu_id === selectedBmuId);
   }, [alerts, selectedBmuId]);
+  const selected = useMemo(
+    () => alerts.find((a) => a.id === selectedId) ?? null,
+    [alerts, selectedId],
+  );
+  const panelOpen = selectedId !== null && selected !== null;
 
   async function refresh() {
     const { data } = await supabase
@@ -327,11 +332,6 @@ function RescueDashboard() {
   }
 
   const activeCount = alerts.filter((a) => ACTIVE_STATUSES.includes(a.status)).length;
-  const selected = useMemo(
-    () => alerts.find((a) => a.id === selectedId) ?? null,
-    [alerts, selectedId],
-  );
-
   async function acknowledgeAll() {
     const ids = unacknowledgedNew.map((a) => a.id);
     if (ids.length === 0) return;
@@ -870,7 +870,6 @@ function RescueDashboard() {
   const gpsAgeS = detailLatest
     ? Math.floor((now - new Date(detailLatest.recorded_at).getTime()) / 1000)
     : null;
-  const panelOpen = selectedId !== null && selected !== null;
   const hasMapLocations =
     filteredAlerts.some((alert) => alert.last_lat != null && alert.last_lng != null) ||
     bmus.some(
