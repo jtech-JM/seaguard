@@ -916,10 +916,16 @@ function RescueDashboard() {
               onClick={() => setMuted((m) => !m)}
               className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
                 muted
-                  ? "border-foam/15 bg-foam/5 text-foam/50 hover:bg-foam/10"
+                  ? theme === "light"
+                    ? "border-slate-500/50 bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    : "border-foam/15 bg-foam/5 text-foam/50 hover:bg-foam/10"
                   : alarmActive
-                    ? "animate-pulse border-distress/50 bg-distress/15 text-distress hover:bg-distress/25"
-                    : "border-tide/30 bg-tide/10 text-tide hover:bg-tide/20"
+                    ? theme === "light"
+                      ? "border-red-800/50 bg-red-100 text-red-800 hover:bg-red-200"
+                      : "border-distress/50 bg-distress/15 text-distress hover:bg-distress/25"
+                    : theme === "light"
+                      ? "border-teal-800/30 bg-teal-50 text-teal-800 hover:bg-teal-100"
+                      : "border-tide/30 bg-tide/10 text-tide hover:bg-tide/20"
               }`}
             >
               {muted ? (
