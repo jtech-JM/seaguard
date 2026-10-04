@@ -44,6 +44,10 @@ interface FishermanFull {
   captain_license_number: string | null;
   bmu?: { name: string } | null;
 }
+interface CrewOption {
+  id: string;
+  full_name: string;
+}
 interface BoatRow {
   id: string;
   name: string;
@@ -95,8 +99,10 @@ function FishermanPortal() {
   });
   const [detailTrip, setDetailTrip] = useState<Trip | null>(null);
   const [activeAlert, setActiveAlert] = useState<SOSAlertRow | null>(null);
-  const [allFishermen, setAllFishermen] = useState<FishermanFull[]>([]);
+  const [allFishermen, setAllFishermen] = useState<CrewOption[]>([]);
   const [selectedCrew, setSelectedCrew] = useState<string[]>([]);
+  const [bmuLoadError, setBmuLoadError] = useState<string | null>(null);
+  const [crewLoadError, setCrewLoadError] = useState<string | null>(null);
 
   async function load() {
     const { data: userRes } = await supabase.auth.getUser();
@@ -118,7 +124,7 @@ function FishermanPortal() {
     ] = await Promise.all([
       supabase
         .from("fishermen")
-        .select("*, bmu:bmus!fishermen_bmu_id_fkey(name)")
+        .select("*")
         .eq("id", prof.fisherman_id)
         .maybeSingle(),
       supabase.from("boats").select("*").eq("owner_fisherman_id", prof.fisherman_id).limit(1),
@@ -145,15 +151,21 @@ function FishermanPortal() {
         .limit(1),
     ]);
     const fishermanRow = fm as unknown as FishermanFull | null;
-    const { data: allFm } = fishermanRow?.bmu_id
-      ? await supabase
-          .from("fishermen")
-          .select("id, full_name, phone, bmu_id")
-          .eq("active", true)
-          .neq("id", prof.fisherman_id)
-          .eq("bmu_id", fishermanRow.bmu_id)
-          .order("full_name")
-      : { data: [] };
+    const { data: assignedBmu, error: bmuError } = fishermanRow?.bmu_id
+      ? await supabase.from("bmus").select("name").eq("id", fishermanRow.bmu_id).maybeSingle()
+      : { data: null };
+    setBmuLoadError(bmuError?.message ?? null);
+    if (fishermanRow) fishermanRow.bmu = assignedBmu;
+    const { data: allFm, error: crewError } = await (supabase.rpc as unknown as (
+      functionName: string,
+      args?: Record<string, never>,
+    ) => Promise<{
+      data: Array<{ id: string; full_name: string }> | null;
+      error: { message: string } | null;
+    }>)(
+      "get_fisherman_crew_candidates",
+    );
+    setCrewLoadError(crewError?.message ?? null);
     const crewTripIds = Array.from(
       new Set(((crewRows ?? []) as Array<{ trip_id: string }>).map((row) => row.trip_id).filter(Boolean)),
     );
@@ -182,7 +194,7 @@ function FishermanPortal() {
     setDevice((dvs?.[0] as DeviceRow) ?? null);
     setTrips(mergedTrips);
     setActiveAlert((alts?.[0] as unknown as SOSAlertRow) ?? null);
-    setAllFishermen((allFm as FishermanFull[]) ?? []);
+    setAllFishermen(allFm ?? []);
   }
 
   useEffect(() => {
@@ -511,7 +523,14 @@ function FishermanPortal() {
               )}
             </Panel>
             <Panel label="BMU" icon={<Anchor className="h-4 w-4 text-foam" />}>
-              <div className="text-lg font-semibold">{fisherman?.bmu?.name ?? "—"}</div>
+              <div className="text-lg font-semibold">
+                {fisherman?.bmu?.name ??
+                  (fisherman?.bmu_id
+                    ? bmuLoadError
+                      ? "Could not load BMU"
+                      : "BMU record unavailable"
+                    : "No BMU assigned")}
+              </div>
               <div className="mt-1 text-xs text-foam/75">{fisherman?.national_id ?? ""}</div>
             </Panel>
           </div>
@@ -639,7 +658,14 @@ function FishermanPortal() {
                     onChange={(v) => setForm({ ...form, notes: v })}
                   />
 
-                  {allFishermen.length > 0 && (
+                  {crewLoadError ? (
+                    <div
+                      role="alert"
+                      className="sm:col-span-2 rounded-lg border border-distress/30 bg-distress/5 p-3 text-xs text-distress"
+                    >
+                      Crew list could not be loaded. Contact your BMU officer or try refreshing.
+                    </div>
+                  ) : fisherman?.bmu_id && allFishermen.length > 0 ? (
                     <div className="sm:col-span-2">
                       <span className="text-[11px] font-medium uppercase tracking-wider text-foam/70">
                         Select Crew Members
@@ -669,6 +695,12 @@ function FishermanPortal() {
                           );
                         })}
                       </div>
+                    </div>
+                  ) : (
+                    <div className="sm:col-span-2 rounded-lg border border-foam/15 bg-foam/[0.03] p-3 text-xs text-foam/75">
+                      {fisherman?.bmu_id
+                        ? "No other active fishermen are assigned to your BMU yet."
+                        : "Your fisherman record has no BMU assignment. Contact your BMU officer to be assigned before selecting crew."}
                     </div>
                   )}
                 </div>
