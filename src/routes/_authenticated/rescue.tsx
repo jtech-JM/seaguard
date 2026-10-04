@@ -452,7 +452,7 @@ function RescueDashboard() {
       filteredAlerts
         .filter(
           (alert) =>
-            ACTIVE_STATUSES.includes(alert.status) &&
+            (ACTIVE_STATUSES.includes(alert.status) || alert.id === selectedId) &&
             alert.last_lat != null &&
             alert.last_lng != null,
         )
@@ -472,7 +472,7 @@ function RescueDashboard() {
       if (!currentIds.has(a.id) || a.last_lat == null || a.last_lng == null) continue;
       const pos: [number, number] = [a.last_lat, a.last_lng];
 
-      const icon = buildMarkerIcon(L, a);
+      const icon = buildMarkerIcon(L, a, ACTIVE_STATUSES.includes(a.status));
       const accessibleLabel = getMarkerAccessibleLabel(a);
 
       const existing = markersRef.current.get(a.id);
@@ -1124,7 +1124,22 @@ function RescueDashboard() {
 function buildMarkerIcon(
   L: typeof import("leaflet"),
   alert: AlertJoined,
+  isActive: boolean,
 ) {
+  if (!isActive) {
+    return L.divIcon({
+      className: "",
+      html: `<svg viewBox="0 0 44 56" aria-hidden="true" style="width:44px;height:56px;overflow:visible">
+        <path d="M22 2C11 2 2 11 2 22c0 14 20 32 20 32s20-18 20-32C42 11 33 2 22 2Z" fill="#6b8ca0" stroke="#101820" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M22 4.5C12.4 4.5 4.5 12.4 4.5 22c0 10.6 13.7 24.7 17.5 28.4C25.8 46.7 39.5 32.6 39.5 22 39.5 12.4 31.6 4.5 22 4.5Z" fill="none" stroke="#fff" stroke-width="2.2"/>
+        <circle cx="22" cy="18" r="5" fill="#fff" stroke="#101820" stroke-width="1.4"/>
+        <path d="M12.5 34v-1.4c0-5.1 4.2-9.1 9.5-9.1s9.5 4 9.5 9.1V34Z" fill="#fff" stroke="#101820" stroke-width="1.4" stroke-linejoin="round"/>
+      </svg>`,
+      iconSize: [44, 56],
+      iconAnchor: [22, 54],
+    });
+  }
+
   // Keep the marker fill aligned with the existing workflow status colors.
   let dotColor = "#e13545"; // default red
 
