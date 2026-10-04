@@ -630,9 +630,9 @@ function FishermanPortal() {
                 )}
               </div>
             ) : (
-              <div className="rounded-2xl border border-foam/15 bg-foam/[0.03] p-6">
-                <div className="text-sm font-semibold">Request a new trip</div>
-                <p className="mt-1 text-xs text-foam/70">
+              <div className="rounded-2xl border border-foam/20 bg-foam/[0.03] p-6">
+                <div className="text-base font-semibold">Request a new trip</div>
+                <p className="mt-1 text-sm text-foam/80">
                   Submitted to your BMU officer for approval before departure.
                 </p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -661,22 +661,22 @@ function FishermanPortal() {
                   {crewLoadError ? (
                     <div
                       role="alert"
-                      className="sm:col-span-2 rounded-lg border border-distress/30 bg-distress/5 p-3 text-xs text-distress"
+                      className="sm:col-span-2 rounded-lg border border-distress/40 bg-distress/5 p-3 text-sm font-medium text-distress"
                     >
                       Crew list could not be loaded. Contact your BMU officer or try refreshing.
                     </div>
                   ) : fisherman?.bmu_id && allFishermen.length > 0 ? (
                     <div className="sm:col-span-2">
-                      <span className="text-[11px] font-medium uppercase tracking-wider text-foam/70">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-foam/85">
                         Select Crew Members
                       </span>
-                      <div className="mt-1.5 grid grid-cols-2 gap-2 max-h-36 overflow-y-auto rounded-lg border border-foam/10 bg-ocean/40 p-3">
+                      <div className="mt-1.5 grid max-h-40 grid-cols-2 gap-2 overflow-y-auto rounded-lg border border-foam/25 bg-foam/[0.025] p-3">
                         {allFishermen.map((f) => {
                           const isChecked = selectedCrew.includes(f.id);
                           return (
                             <label
                               key={f.id}
-                              className="flex items-center gap-2 text-xs text-foam/90 hover:text-foam cursor-pointer"
+                              className="flex cursor-pointer items-center gap-2 text-sm font-medium text-foam hover:underline"
                             >
                               <input
                                 type="checkbox"
@@ -688,7 +688,7 @@ function FishermanPortal() {
                                     setSelectedCrew(selectedCrew.filter((id) => id !== f.id));
                                   }
                                 }}
-                                className="rounded border-foam/20 text-tide focus:ring-tide bg-ocean"
+                                className="h-4 w-4 rounded border-foam/40 bg-ocean text-tide focus:ring-2 focus:ring-tide"
                               />
                               {f.full_name}
                             </label>
@@ -697,7 +697,7 @@ function FishermanPortal() {
                       </div>
                     </div>
                   ) : (
-                    <div className="sm:col-span-2 rounded-lg border border-foam/15 bg-foam/[0.03] p-3 text-xs text-foam/75">
+                    <div className="sm:col-span-2 rounded-lg border border-foam/25 bg-foam/[0.03] p-3 text-sm text-foam/85">
                       {fisherman?.bmu_id
                         ? "No other active fishermen are assigned to your BMU yet."
                         : "Your fisherman record has no BMU assignment. Contact your BMU officer to be assigned before selecting crew."}
@@ -707,12 +707,16 @@ function FishermanPortal() {
                 <button
                   onClick={checkOut}
                   disabled={busy || !!tripRequestBlockedReason}
-                  className="mt-4 rounded-lg bg-distress px-4 py-2 text-sm font-semibold text-foam hover:bg-distress/90 disabled:opacity-60"
+                  className="mt-4 rounded-lg bg-distress px-4 py-2.5 text-sm font-semibold text-foam hover:bg-distress/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-tide focus-visible:ring-offset-2 focus-visible:ring-offset-ocean disabled:cursor-not-allowed disabled:border disabled:border-foam/30 disabled:bg-foam/10 disabled:text-foam/65 disabled:opacity-100"
                 >
                   Submit trip request
                 </button>
                 {tripRequestBlockedReason ? (
-                  <div className="mt-3 rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-3 text-xs text-yellow-200">
+                  <div
+                    role="alert"
+                    className="mt-3 rounded-xl border border-amber-700/30 bg-amber-100/70 p-3 text-sm font-medium text-amber-950 dark:border-amber-300/30 dark:bg-amber-400/10 dark:text-amber-100"
+                  >
+                    <span className="font-bold">Can’t submit yet: </span>
                     {tripRequestBlockedReason}
                   </div>
                 ) : null}
@@ -722,10 +726,10 @@ function FishermanPortal() {
         )}
 
         <div className="mt-8">
-          <div className="mb-3 text-sm font-semibold">Trip history</div>
+          <div className="mb-3 text-base font-semibold">Trip history</div>
           <div className="overflow-hidden rounded-2xl border border-foam/15">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-foam/[0.04] text-[10px] font-semibold uppercase tracking-wider text-foam/70">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-foam/[0.04] text-[11px] font-semibold uppercase tracking-wider text-foam/80">
                 <tr>
                   <th className="px-4 py-2">Status</th>
                   <th className="px-4 py-2">Destination</th>
@@ -772,7 +776,7 @@ function FishermanPortal() {
                       <td className="px-4 py-2">
                         {t.actual_return ? new Date(t.actual_return).toLocaleString() : "—"}
                       </td>
-                      <td className="px-4 py-2 text-foam/75">{t.crew?.length ?? 0}</td>
+                      <td className="px-4 py-2 text-foam">{t.crew?.length ?? 0}</td>
                     </tr>
                   );
                 })}
@@ -882,12 +886,12 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] font-medium uppercase tracking-wider text-foam/70">{label}</span>
+      <span className="text-xs font-semibold uppercase tracking-wider text-foam/85">{label}</span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-lg border border-foam/20 bg-ocean/40 px-3 py-2 text-sm text-foam outline-none focus:border-tide focus:ring-2 focus:ring-tide/30"
+        className="mt-1 w-full rounded-lg border border-foam/30 bg-foam/[0.025] px-3 py-2.5 text-sm text-foam outline-none focus:border-tide focus:ring-2 focus:ring-tide/40"
       />
     </label>
   );
