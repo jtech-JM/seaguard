@@ -115,11 +115,10 @@ function FishermanPortal() {
       { data: captainTrips },
       { data: crewRows },
       { data: alts },
-      { data: allFm },
     ] = await Promise.all([
       supabase
         .from("fishermen")
-        .select("*, bmu:bmu_id(name)")
+        .select("*, bmu:bmus!fishermen_bmu_id_fkey(name)")
         .eq("id", prof.fisherman_id)
         .maybeSingle(),
       supabase.from("boats").select("*").eq("owner_fisherman_id", prof.fisherman_id).limit(1),
@@ -144,16 +143,17 @@ function FishermanPortal() {
         .in("status", ["new", "acknowledged", "assigned", "in_progress"])
         .order("started_at", { ascending: false })
         .limit(1),
-      prof.bmu_id
-        ? supabase
-            .from("fishermen")
-            .select("id, full_name, phone, bmu_id")
-            .eq("active", true)
-            .neq("id", prof.fisherman_id)
-            .eq("bmu_id", prof.bmu_id)
-            .order("full_name")
-        : Promise.resolve({ data: [] }),
     ]);
+    const fishermanRow = fm as unknown as FishermanFull | null;
+    const { data: allFm } = fishermanRow?.bmu_id
+      ? await supabase
+          .from("fishermen")
+          .select("id, full_name, phone, bmu_id")
+          .eq("active", true)
+          .neq("id", prof.fisherman_id)
+          .eq("bmu_id", fishermanRow.bmu_id)
+          .order("full_name")
+      : { data: [] };
     const crewTripIds = Array.from(
       new Set(((crewRows ?? []) as Array<{ trip_id: string }>).map((row) => row.trip_id).filter(Boolean)),
     );
@@ -177,7 +177,7 @@ function FishermanPortal() {
       const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
       return bTime - aTime;
     });
-    setFisherman(fm as unknown as FishermanFull);
+    setFisherman(fishermanRow);
     setBoat((bts?.[0] as BoatRow) ?? null);
     setDevice((dvs?.[0] as DeviceRow) ?? null);
     setTrips(mergedTrips);
