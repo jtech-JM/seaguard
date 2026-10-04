@@ -905,11 +905,15 @@ function RescueDashboard() {
           {!audioReady ? (
             <button
               onClick={enableAudio}
-              className="inline-flex animate-pulse items-center gap-2 rounded-lg border border-yellow-500/50 bg-yellow-500/15 px-3 py-1.5 text-xs font-semibold text-yellow-300 hover:bg-yellow-500/25 transition"
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                theme === "light"
+                  ? "border-amber-700 bg-yellow-400 text-black hover:bg-yellow-300"
+                  : "border-yellow-500/50 bg-yellow-500/15 text-yellow-300 hover:bg-yellow-500/25"
+              }`}
             >
-              <Volume2 className="h-3.5 w-3.5" />
+              <Volume2 className="h-3.5 w-3.5 animate-bounce" />
               ENABLE ALARM SOUND
-              <ExternalLink className="h-3 w-3 opacity-60" />
+              <ExternalLink className="h-3 w-3" />
             </button>
           ) : (
             <button
