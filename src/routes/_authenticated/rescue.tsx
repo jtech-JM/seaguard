@@ -836,7 +836,7 @@ function RescueDashboard() {
       )}
 
       {/* Header */}
-      <header className="flex items-center justify-between border-b border-foam/10 px-6 py-4">
+      <header className="relative z-10 flex items-center justify-between border-b border-foam/10 bg-ocean px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="grid h-9 w-9 place-items-center rounded-lg bg-tide/20 ring-1 ring-tide/30">
             <Anchor className="h-4 w-4 text-tide" />
@@ -945,7 +945,7 @@ function RescueDashboard() {
       </header>
 
       {/* Stats bar */}
-      <div className="grid grid-cols-2 gap-px border-b border-foam/10 bg-foam/[0.02] sm:grid-cols-4 lg:grid-cols-6">
+      <div className="relative z-10 grid grid-cols-2 gap-px border-b border-foam/10 bg-ocean sm:grid-cols-4 lg:grid-cols-6">
         <StatCell
           label="Active SOS"
           value={activeCount}
@@ -1556,7 +1556,7 @@ function EmergencyBanner({
   onView: () => void;
 }) {
   return (
-    <div className="border-b-2 border-distress bg-distress px-4 py-3 text-white shadow-2xl sm:px-6">
+    <div className="border-b-2 border-distress bg-distress px-4 py-3 text-white sm:px-6">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3">
         <div className="flex min-w-0 flex-1 basis-64 items-center gap-4">
           <Siren className="h-6 w-6 shrink-0 animate-pulse" />
