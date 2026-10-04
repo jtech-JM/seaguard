@@ -448,7 +448,16 @@ function RescueDashboard() {
     const map = mapRef.current;
     if (!L || !map) return;
 
-    const currentIds = new Set(filteredAlerts.map((a) => a.id));
+    const currentIds = new Set(
+      filteredAlerts
+        .filter(
+          (alert) =>
+            ACTIVE_STATUSES.includes(alert.status) &&
+            alert.last_lat != null &&
+            alert.last_lng != null,
+        )
+        .map((alert) => alert.id),
+    );
 
     // Remove stale markers
     markersRef.current.forEach((marker, id) => {
@@ -460,11 +469,10 @@ function RescueDashboard() {
 
     // Upsert markers for all alerts with GPS coords
     for (const a of filteredAlerts) {
-      if (a.last_lat == null || a.last_lng == null) continue;
+      if (!currentIds.has(a.id) || a.last_lat == null || a.last_lng == null) continue;
       const pos: [number, number] = [a.last_lat, a.last_lng];
-      const isActive = ACTIVE_STATUSES.includes(a.status);
 
-      const icon = buildMarkerIcon(L, a, isActive);
+      const icon = buildMarkerIcon(L, a);
       const accessibleLabel = getMarkerAccessibleLabel(a);
 
       const existing = markersRef.current.get(a.id);
@@ -818,13 +826,11 @@ function RescueDashboard() {
       <audio ref={audioRef} src={ALARM_URL} preload="auto" />
       <style>{`
           @keyframes sos-marker-halo {0%{transform:scale(.65);opacity:.58}100%{transform:scale(2.1);opacity:0}}
-          .sos-marker-active,.sos-marker-resolved{position:relative;overflow:visible}
+          .sos-marker-active{position:relative;overflow:visible}
           .sos-marker-active{width:44px;height:56px}
           .sos-marker-halo{position:absolute;left:-7px;top:-5px;width:58px;height:58px;border-radius:50%;background:rgba(225,53,69,.42);animation:sos-marker-halo 1.7s ease-out infinite;pointer-events:none}
           .sos-marker-halo--delayed{animation-delay:.85s}
           .sos-marker-pin{position:absolute;inset:0 auto auto 0;width:44px;height:56px;overflow:visible}
-          .sos-marker-resolved{width:10px;height:10px}
-          .sos-marker-dot{position:absolute;left:1px;top:1px;width:8px;height:8px;border:2px solid #111827;border-radius:50%;background:#6b8ca0;box-shadow:0 0 0 1px #fff}
           @media (prefers-reduced-motion: reduce){.sos-marker-halo{animation:none;transform:scale(1.35);opacity:.48}}
           .leaflet-container{background:#e5e5e5;font-family:inherit}
           .leaflet-control-zoom a{background:rgba(255,255,255,0.95)!important;color:#1a1a1a!important;border-color:rgba(0,0,0,0.08)!important}
@@ -1118,20 +1124,7 @@ function RescueDashboard() {
 function buildMarkerIcon(
   L: typeof import("leaflet"),
   alert: AlertJoined,
-  isActive: boolean,
 ) {
-  if (!isActive) {
-    // Small grey resolved dot with white outline for contrast on light/dark maps
-    return L.divIcon({
-      className: "",
-      html: `<div class="sos-marker-resolved">
-        <div class="sos-marker-dot"></div>
-      </div>`,
-      iconSize: [10, 10],
-      iconAnchor: [5, 5],
-    });
-  }
-
   // Keep the marker fill aligned with the existing workflow status colors.
   let dotColor = "#e13545"; // default red
 
