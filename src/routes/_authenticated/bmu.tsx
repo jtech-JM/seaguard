@@ -377,6 +377,19 @@ function TripsSection({
     }
     onChange();
   }
+  async function markReturned(id: string) {
+    const confirmed = window.confirm(
+      "Confirm that the boat and its crew are safely back before marking this trip returned.",
+    );
+    if (!confirmed) return;
+
+    const { error } = await transitionTrip(id, "returned", "BMU confirmed safe return");
+    if (error) {
+      window.alert(error.message);
+      return;
+    }
+    onChange();
+  }
 
   return (
     <>
@@ -491,6 +504,14 @@ function TripsSection({
                             className="rounded-md px-2 py-1 text-[10px] font-medium text-destructive transition-colors duration-150 hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             Mark Overdue
+                          </button>
+                        )}
+                        {t.status === "overdue" && (
+                          <button
+                            onClick={() => markReturned(t.id)}
+                            className="rounded-md px-2 py-1 text-[10px] font-semibold text-primary transition-colors duration-150 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            Mark Returned
                           </button>
                         )}
                       </div>
